@@ -517,24 +517,15 @@ class ChipTodoApp {
             <input type="range" name="progress" min="0" max="100" value="${currentProgress}" class="progress-slider" id="progressSlider">
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>优先级</label>
-            <select name="priority">
-              <option value="low" ${task?.priority === 'low' ? 'selected' : ''}>低</option>
-              <option value="medium" ${!task || task.priority === 'medium' ? 'selected' : ''}>中</option>
-              <option value="high" ${task?.priority === 'high' ? 'selected' : ''}>高</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>状态</label>
-            <select name="status">
-              <option value="pending" ${!task || task.status === 'pending' ? 'selected' : ''}>待处理</option>
-              <option value="in_progress" ${task?.status === 'in_progress' ? 'selected' : ''}>进行中</option>
-              <option value="completed" ${task?.status === 'completed' ? 'selected' : ''}>已完成</option>
-            </select>
-          </div>
+        <div class="form-group">
+          <label>优先级</label>
+          <select name="priority">
+            <option value="low" ${task?.priority === 'low' ? 'selected' : ''}>低</option>
+            <option value="medium" ${!task || task.priority === 'medium' ? 'selected' : ''}>中</option>
+            <option value="high" ${task?.priority === 'high' ? 'selected' : ''}>高</option>
+          </select>
         </div>
+        <div class="form-group">
         <div class="form-group">
           <label>描述</label>
           <textarea name="description" placeholder="详细描述">${task ? Utils.escapeHtml(task.description) : ''}</textarea>

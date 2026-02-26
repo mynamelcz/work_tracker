@@ -130,14 +130,12 @@ class DataStore {
         updates.progress = Math.min(100, Math.max(0, parseInt(updates.progress) || 0));
         if (updates.progress >= 100 && task.status !== 'completed') {
           updates.status = 'completed';
+          updates.completedAt = new Date().toISOString();
         } else if (updates.progress > 0 && updates.progress < 100 && task.status === 'pending') {
           updates.status = 'in_progress';
-        }
-      }
-      if (updates.status === 'completed' && task.status !== 'completed') {
-        updates.completedAt = new Date().toISOString();
-        if (updates.progress === undefined || updates.progress < 100) {
-          updates.progress = 100;
+        } else if (updates.progress === 0 && task.status === 'completed') {
+          updates.status = 'pending';
+          updates.completedAt = null;
         }
       }
       this.data.tasks[index] = { ...task, ...updates };
