@@ -162,7 +162,7 @@ class ChipTodoApp {
         
         <div class="board-content">
           <h3>本周任务 - 甘特图视图</h3>
-          ${weekTasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(weekTasks, members)}
+          ${weekTasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(weekTasks, members, projects)}
         </div>
       </div>
     `;
@@ -183,7 +183,7 @@ class ChipTodoApp {
     `;
   }
 
-  renderGantt(tasks, members) {
+  renderGantt(tasks, members, projects) {
     const tasksByAssignee = {};
     tasks.forEach(task => {
       const assigneeId = task.assignee || 'unassigned';
@@ -207,7 +207,10 @@ class ChipTodoApp {
             <span>${Utils.escapeHtml(memberName)}</span>
           </div>
           <div class="gantt-tasks">
-            ${memberTasks.map(task => this.renderGanttTask(task)).join('')}
+            ${memberTasks.map(task => {
+              const project = projects.find(p => p.id === task.projectId);
+              return this.renderGanttTask(task, project);
+            }).join('')}
           </div>
         </div>
       `;
@@ -217,15 +220,23 @@ class ChipTodoApp {
     return html;
   }
 
-  renderGanttTask(task) {
+  renderGanttTask(task, project) {
     const progress = task.progress || 0;
     const statusClass = Utils.getStatusClass(task.status);
     const progressClass = this.getProgressClass(progress);
     const progressColor = this.getProgressColor(progress);
     
+    const priorityLabels = { low: '低', medium: '中', high: '高' };
+    const priorityEmoji = { low: '🔵', medium: '🟡', high: '🔴' };
+    const priority = task.priority || 'medium';
+    
     return `
       <div class="gantt-task ${statusClass}" data-id="${task.id}">
-        <div class="task-name">${Utils.escapeHtml(task.name)}</div>
+        <div class="task-info">
+          <span class="task-project">${project ? Utils.escapeHtml(project.name) : '未指定项目'}</span>
+          <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityEmoji[priority]}</span>
+          <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+        </div>
         <div class="task-bar">
           <div class="task-progress ${progressClass}" style="width: ${progress}%; background: ${progressColor};"></div>
         </div>
