@@ -770,3 +770,4 @@ class ChipTodoApp {
 }
 
 const app = new ChipTodoApp();
+window.app = app;

@@ -257,3 +257,4 @@ class DataStore {
 }
 
 const store = new DataStore();
+window.store = store;
