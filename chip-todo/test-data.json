@@ -1,0 +1,29 @@
+{
+  "data": {
+    "members": [
+      { "id": "m_001", "name": "张三", "role": "测试工程师", "color": "#3B82F6", "createdAt": "2026-01-01T00:00:00.000Z" },
+      { "id": "m_002", "name": "李四", "role": "硬件工程师", "color": "#10B981", "createdAt": "2026-01-01T00:00:00.000Z" },
+      { "id": "m_003", "name": "王五", "role": "软件工程师", "color": "#F59E0B", "createdAt": "2026-01-01T00:00:00.000Z" },
+      { "id": "m_004", "name": "赵六", "role": "测试主管", "color": "#EF4444", "createdAt": "2026-01-01T00:00:00.000Z" }
+    ],
+    "projects": [
+      { "id": "p_001", "name": "A1芯片测试", "description": "新一代A1芯片功能验证", "members": ["m_001", "m_002"], "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z" },
+      { "id": "p_002", "name": "B2芯片测试", "description": "B2芯片性能测试", "members": ["m_002", "m_003"], "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z" },
+      { "id": "p_003", "name": "C3芯片测试", "description": "C3芯片兼容性测试", "members": ["m_003", "m_004"], "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z" }
+    ],
+    "tasks": [
+      { "id": "t_001", "projectId": "p_001", "name": "功耗测试", "description": "测试芯片功耗", "assignee": "m_001", "status": "completed", "priority": "high", "progress": 100, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": "2026-01-28T00:00:00.000Z" },
+      { "id": "t_002", "projectId": "p_001", "name": "温度测试", "description": "测试工作温度范围", "assignee": "m_001", "status": "in_progress", "priority": "high", "progress": 75, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_003", "projectId": "p_001", "name": "信号完整性测试", "description": "信号完整性验证", "assignee": "m_002", "status": "in_progress", "priority": "medium", "progress": 50, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_004", "projectId": "p_002", "name": "时钟测试", "description": "时钟信号测试", "assignee": "m_002", "status": "in_progress", "priority": "medium", "progress": 30, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_005", "projectId": "p_002", "name": "电源管理测试", "description": "电源管理单元测试", "assignee": "m_003", "status": "pending", "priority": "low", "progress": 10, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_006", "projectId": "p_003", "name": "IO接口测试", "description": "IO接口功能测试", "assignee": "m_003", "status": "pending", "priority": "low", "progress": 0, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_007", "projectId": "p_003", "name": "EMC测试", "description": "电磁兼容性测试", "assignee": "m_004", "status": "pending", "priority": "high", "progress": 0, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": null },
+      { "id": "t_008", "projectId": "p_001", "name": "老化测试", "description": "芯片老化测试", "assignee": "m_001", "status": "completed", "priority": "medium", "progress": 100, "weekKey": "2026-W05", "createdAt": "2026-01-01T00:00:00.000Z", "completedAt": "2026-01-25T00:00:00.000Z" }
+    ],
+    "currentWeek": 5,
+    "currentYear": 2026
+  },
+  "history": [],
+  "exportedAt": "2026-01-01T00:00:00.000Z"
+}
