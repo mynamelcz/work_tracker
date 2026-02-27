@@ -5,6 +5,7 @@ class ChipTodoApp {
     this.currentMember = null;
     this.meetingWeek = null;
     this.meetingYear = null;
+    this.boardFilter = 'week'; // week, month, year, all
     this.init();
   }
 
@@ -33,7 +34,6 @@ class ChipTodoApp {
         <button class="tab ${this.currentView === 'projects' ? 'active' : ''}" data-view="projects">📁 项目</button>
         <button class="tab ${this.currentView === 'members' ? 'active' : ''}" data-view="members">👥 人员</button>
         <button class="tab ${this.currentView === 'meeting' ? 'active' : ''}" data-view="meeting">📅 会议</button>
-        <button class="tab ${this.currentView === 'history' ? 'active' : ''}" data-view="history">📜 历史</button>
       </nav>
       
       <main class="main-content">
@@ -41,7 +41,6 @@ class ChipTodoApp {
         <div id="projectsView" class="view ${this.currentView === 'projects' ? '' : 'hidden'}"></div>
         <div id="membersView" class="view ${this.currentView === 'members' ? '' : 'hidden'}"></div>
         <div id="meetingView" class="view ${this.currentView === 'meeting' ? '' : 'hidden'}"></div>
-        <div id="historyView" class="view ${this.currentView === 'history' ? '' : 'hidden'}"></div>
       </main>
       
       <footer class="footer">
@@ -58,7 +57,6 @@ class ChipTodoApp {
     this.renderProjects();
     this.renderMembers();
     this.renderMeeting();
-    this.renderHistory();
     this.updateStats();
   }
 
@@ -108,9 +106,23 @@ class ChipTodoApp {
 
   renderBoard() {
     const container = Utils.$('#boardView');
-    const weekTasks = store.getTasksByWeek(store.data.currentWeek, store.data.currentYear);
-    const projects = store.data.projects.filter(p => p.weekKey === store.getWeekKey(store.data.currentWeek, store.data.currentYear));
     const members = store.data.members;
+    
+    // Get filtered tasks and projects based on boardFilter
+    const { tasks, projects } = this.getFilteredData(this.boardFilter);
+    
+    // Group tasks by assignee for gantt
+    const tasksByAssignee = {};
+    tasks.forEach(task => {
+      const assigneeId = task.assignee || 'unassigned';
+      if (!tasksByAssignee[assigneeId]) {
+        tasksByAssignee[assigneeId] = [];
+      }
+      tasksByAssignee[assigneeId].push(task);
+    });
+    
+    const filterLabels = { week: '本周', month: '本月', year: '本年', all: '所有' };
+    const currentFilterLabel = filterLabels[this.boardFilter];
     
     container.innerHTML = `
       <div class="board">
@@ -123,13 +135,88 @@ class ChipTodoApp {
         </div>
         
         <div class="board-content">
-          <h3>本周任务 - 甘特图视图</h3>
-          ${weekTasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(weekTasks, members, projects)}
+          <div class="board-header">
+            <h3>任务甘特图</h3>
+            <div class="filter-tabs">
+              <button class="filter-tab ${this.boardFilter === 'week' ? 'active' : ''}" data-filter="week">本周</button>
+              <button class="filter-tab ${this.boardFilter === 'month' ? 'active' : ''}" data-filter="month">本月</button>
+              <button class="filter-tab ${this.boardFilter === 'year' ? 'active' : ''}" data-filter="year">本年</button>
+              <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">所有</button>
+            </div>
+          </div>
+          ${tasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(tasks, members, projects)}
         </div>
       </div>
     `;
     
     this.bindBoardEvents();
+    this.bindFilterEvents();
+  }
+
+  getFilteredData(filter) {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const currentWeek = Utils.getISOWeek();
+    
+    let tasks, projects;
+    
+    if (filter === 'week') {
+      // 本周：显示所有当前未完成的任务（pending/in_progress/paused）
+      tasks = store.data.tasks.filter(t => 
+        t.status === 'pending' || t.status === 'in_progress' || t.status === 'paused'
+      );
+      // 项目显示与任务相关的所有项目
+      const projectIds = new Set(tasks.map(t => t.projectId));
+      projects = store.data.projects.filter(p => projectIds.has(p.id));
+    } else if (filter === 'month') {
+      // 本月：显示 weekKey 在本月的所有任务
+      tasks = store.data.tasks.filter(t => {
+        if (!t.weekKey) return false;
+        const taskYear = parseInt(t.weekKey.split('-')[0]);
+        const taskWeek = parseInt(t.weekKey.split('-W')[1]);
+        const taskDate = this.getWeekStartDate(taskYear, taskWeek);
+        return taskDate.getFullYear() === currentYear && taskDate.getMonth() === currentMonth;
+      });
+      const projectIds = new Set(tasks.map(t => t.projectId));
+      projects = store.data.projects.filter(p => projectIds.has(p.id));
+    } else if (filter === 'year') {
+      // 本年：显示 year 在本年的所有任务
+      tasks = store.data.tasks.filter(t => {
+        if (!t.weekKey) return false;
+        const taskYear = parseInt(t.weekKey.split('-')[0]);
+        return taskYear === currentYear;
+      });
+      const projectIds = new Set(tasks.map(t => t.projectId));
+      projects = store.data.projects.filter(p => projectIds.has(p.id));
+    } else {
+      // 所有：显示所有任务
+      tasks = store.data.tasks;
+      projects = store.data.projects;
+    }
+    
+    return { tasks, projects };
+  }
+
+  getWeekStartDate(year, week) {
+    const simple = new Date(year, 0, 1 + (week - 1) * 7);
+    const dow = simple.getDay();
+    const startWeek = simple;
+    if (dow <= 4) {
+      startWeek.setDate(simple.getDate() - simple.getDay() + 1);
+    } else {
+      startWeek.setDate(simple.getDate() + 8 - simple.getDay());
+    }
+    return startWeek;
+  }
+
+  bindFilterEvents() {
+    Utils.$$('.filter-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.boardFilter = btn.dataset.filter;
+        this.renderBoard();
+      });
+    });
   }
 
   renderProjectItem(project) {
@@ -243,7 +330,7 @@ class ChipTodoApp {
 
   renderProjects() {
     const container = Utils.$('#projectsView');
-    const weekProjects = store.data.projects.filter(p => p.weekKey === store.getWeekKey(store.data.currentWeek, store.data.currentYear));
+    const allProjects = store.data.projects;
     
     container.innerHTML = `
       <div class="projects-page">
@@ -252,10 +339,10 @@ class ChipTodoApp {
           <button class="btn btn-primary" id="newProjectBtn">+ 新建项目</button>
         </div>
         
-        ${weekProjects.length === 0 ? '<p class="empty">暂无项目</p>' : ''}
+        ${allProjects.length === 0 ? '<p class="empty">暂无项目</p>' : ''}
         
         <div class="project-cards">
-          ${weekProjects.map(p => this.renderProjectCard(p)).join('')}
+          ${allProjects.map(p => this.renderProjectCard(p)).join('')}
         </div>
       </div>
     `;
@@ -809,52 +896,6 @@ class ChipTodoApp {
       this.meetingYear = y;
       this.renderMeeting();
     });
-  }
-
-  renderHistory() {
-    const container = Utils.$('#historyView');
-    const history = store.loadHistory();
-    
-    container.innerHTML = `
-      <div class="history-page">
-        <div class="page-header">
-          <h2>📜 历史存档</h2>
-          <button class="btn btn-primary" id="archiveWeekBtn">📦 存档本周</button>
-        </div>
-        
-        ${history.length === 0 ? '<p class="empty">暂无历史记录</p>' : ''}
-        
-        <div class="history-list">
-          ${history.map(h => this.renderHistoryItem(h)).join('')}
-        </div>
-      </div>
-    `;
-    
-    Utils.$('#archiveWeekBtn')?.addEventListener('click', async () => {
-      if (await Utils.confirm('确定要存档本周数据吗？存档后本周数据将移至历史记录。')) {
-        store.archiveCurrentWeek();
-        this.render();
-      }
-    });
-  }
-
-  renderHistoryItem(item) {
-    const weekRange = Utils.getWeekRange(item.week, item.year);
-    const completed = item.tasks.filter(t => t.status === 'completed').length;
-    
-    return `
-      <div class="history-item">
-        <div class="history-header">
-          <h3>第${item.week}周 (${weekRange})</h3>
-          <span>📝 ${completed}/${item.tasks.length} 任务完成</span>
-        </div>
-        <p>存档时间: ${Utils.formatDate(item.archivedAt)}</p>
-        <div class="history-details">
-          <span>📁 ${item.projects.length} 个项目</span>
-          <span>👥 参与人员: ${new Set(item.tasks.map(t => t.assignee).filter(Boolean)).size}人</span>
-        </div>
-      </div>
-    `;
   }
 
   exportData() {
