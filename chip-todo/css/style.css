@@ -1,6 +1,7 @@
 :root {
   --primary: #3B82F6;
   --primary-dark: #2563EB;
+  --primary-light: rgba(59, 130, 246, 0.3);
   --success: #10B981;
   --warning: #F59E0B;
   --danger: #EF4444;
@@ -142,12 +143,14 @@ body {
 }
 
 .project-item.active {
-  background: var(--primary);
-  color: white;
+  background: var(--primary) !important;
+  color: white !important;
+  border-color: var(--primary-dark) !important;
+  box-shadow: 0 0 0 2px var(--primary-light);
 }
 
 .project-item.active .project-meta {
-  color: rgba(255,255,255,0.8);
+  color: rgba(255,255,255,0.8) !important;
 }
 
 .project-name {
