@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>清除数据</title>
+</head>
+<body>
+  <h1>点击按钮清除 localStorage 数据</h1>
+  <button onclick="clearData()">清除数据</button>
+  <script>
+    function clearData() {
+      localStorage.clear();
+      alert('数据已清除！请关闭此页面，重新打开 index.html');
+    }
+  </script>
+</body>
+</html>
