@@ -3,6 +3,8 @@ class ChipTodoApp {
     this.currentView = 'board';
     this.currentProject = null;
     this.currentMember = null;
+    this.meetingWeek = null;
+    this.meetingYear = null;
     this.init();
   }
 
@@ -17,7 +19,6 @@ class ChipTodoApp {
     if (!store.data.currentWeek || !store.data.currentYear) {
       store.setCurrentWeek(now.week, now.year);
     }
-    this.updateWeekDisplay();
   }
 
   render() {
@@ -25,25 +26,22 @@ class ChipTodoApp {
     app.innerHTML = `
       <header class="header">
         <h1>🔬 芯片测试工作看板</h1>
-        <div class="week-nav">
-          <button class="btn btn-icon" id="prevWeek">◀</button>
-          <span class="current-week" id="currentWeekDisplay">第${store.data.currentWeek}周</span>
-          <button class="btn btn-icon" id="nextWeek">▶</button>
-        </div>
       </header>
       
       <nav class="tabs">
-        <button class="tab active" data-view="board">📊 看板</button>
-        <button class="tab" data-view="projects">📁 项目</button>
-        <button class="tab" data-view="members">👥 人员</button>
-        <button class="tab" data-view="history">📜 历史</button>
+        <button class="tab ${this.currentView === 'board' ? 'active' : ''}" data-view="board">📊 看板</button>
+        <button class="tab ${this.currentView === 'projects' ? 'active' : ''}" data-view="projects">📁 项目</button>
+        <button class="tab ${this.currentView === 'members' ? 'active' : ''}" data-view="members">👥 人员</button>
+        <button class="tab ${this.currentView === 'meeting' ? 'active' : ''}" data-view="meeting">📅 会议</button>
+        <button class="tab ${this.currentView === 'history' ? 'active' : ''}" data-view="history">📜 历史</button>
       </nav>
       
       <main class="main-content">
-        <div id="boardView" class="view"></div>
-        <div id="projectsView" class="view hidden"></div>
-        <div id="membersView" class="view hidden"></div>
-        <div id="historyView" class="view hidden"></div>
+        <div id="boardView" class="view ${this.currentView === 'board' ? '' : 'hidden'}"></div>
+        <div id="projectsView" class="view ${this.currentView === 'projects' ? '' : 'hidden'}"></div>
+        <div id="membersView" class="view ${this.currentView === 'members' ? '' : 'hidden'}"></div>
+        <div id="meetingView" class="view ${this.currentView === 'meeting' ? '' : 'hidden'}"></div>
+        <div id="historyView" class="view ${this.currentView === 'history' ? '' : 'hidden'}"></div>
       </main>
       
       <footer class="footer">
@@ -59,6 +57,7 @@ class ChipTodoApp {
     this.renderBoard();
     this.renderProjects();
     this.renderMembers();
+    this.renderMeeting();
     this.renderHistory();
     this.updateStats();
   }
@@ -68,16 +67,6 @@ class ChipTodoApp {
       const tab = e.target.closest('.tab');
       if (tab) {
         this.switchView(tab.dataset.view);
-      }
-      
-      const prevBtn = e.target.closest('#prevWeek');
-      if (prevBtn) {
-        this.changeWeek(-1);
-      }
-      
-      const nextBtn = e.target.closest('#nextWeek');
-      if (nextBtn) {
-        this.changeWeek(1);
       }
       
       const exportBtn = e.target.closest('#exportBtn');
@@ -102,33 +91,6 @@ class ChipTodoApp {
     Utils.$(`.tab[data-view="${view}"]`).classList.add('active');
     Utils.$$('.view').forEach(v => v.classList.add('hidden'));
     Utils.$(`#${view}View`).classList.remove('hidden');
-  }
-
-  changeWeek(delta) {
-    let week = store.data.currentWeek;
-    let year = store.data.currentYear;
-    
-    week += delta;
-    if (week < 1) {
-      year--;
-      week = Utils.getWeeksInYear(year);
-    } else if (week > Utils.getWeeksInYear(year)) {
-      year++;
-      week = 1;
-    }
-    
-    store.setCurrentWeek(week, year);
-    this.updateWeekDisplay();
-    this.renderBoard();
-    this.renderProjects();
-    this.renderHistory();
-    this.updateStats();
-  }
-
-  updateWeekDisplay() {
-    const display = Utils.$('#currentWeekDisplay');
-    const weekRange = Utils.getWeekRange(store.data.currentWeek, store.data.currentYear);
-    display.textContent = `第${store.data.currentWeek}周 (${weekRange})`;
   }
 
   updateStats() {
@@ -537,6 +499,14 @@ class ChipTodoApp {
           </select>
         </div>
         <div class="form-group">
+          <label>状态</label>
+          <select name="status">
+            <option value="pending" ${!task || task.status === 'pending' ? 'selected' : ''}>待处理</option>
+            <option value="in_progress" ${task?.status === 'in_progress' ? 'selected' : ''}>进行中</option>
+            <option value="paused" ${task?.status === 'paused' ? 'selected' : ''}>暂停</option>
+            <option value="completed" ${task?.status === 'completed' ? 'selected' : ''}>已完成</option>
+          </select>
+        </div>
         <div class="form-group">
           <label>描述</label>
           <textarea name="description" placeholder="详细描述">${task ? Utils.escapeHtml(task.description) : ''}</textarea>
@@ -693,6 +663,151 @@ class ChipTodoApp {
       
       overlay.remove();
       this.render();
+    });
+  }
+
+  renderMeeting() {
+    const container = Utils.$('#meetingView');
+    // Use meeting state if set, otherwise use current week
+    const week = this.meetingWeek || store.data.currentWeek;
+    const year = this.meetingYear || store.data.currentYear;
+    
+    // Store current meeting week/year for persistence
+    this.meetingWeek = week;
+    this.meetingYear = year;
+    
+    const meeting = store.getMeeting(week, year);
+    const members = store.data.members;
+    const tasksByAssignee = store.getTasksByAssignee(week, year);
+    
+    const weekRange = Utils.getWeekRange(week, year);
+    
+    // Build attendee checkboxes
+    const attendeeCheckboxes = members.map(m => `
+      <label class="attendee-checkbox">
+        <input type="checkbox" value="${m.id}" ${meeting?.attendees?.includes(m.id) ? 'checked' : ''}>
+        <span class="member-avatar" style="background:${m.color}">${m.name[0]}</span>
+        <span>${Utils.escapeHtml(m.name)}</span>
+      </label>
+    `).join('');
+    
+    // Build tasks by assignee
+    let tasksHtml = '';
+    Object.entries(tasksByAssignee).forEach(([assigneeId, tasks]) => {
+      const member = members.find(m => m.id === assigneeId);
+      const memberName = member ? member.name : '未分配';
+      const memberRole = member ? member.role : '';
+      const memberColor = member ? member.color : '#6B7280';
+      
+      const taskItems = tasks.map(task => {
+        const project = store.data.projects.find(p => p.id === task.projectId);
+        const projectName = project ? project.name : '未指定项目';
+        const statusText = Utils.getStatusText(task.status);
+        return `
+          <div class="meeting-task-item">
+            <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+            <span class="task-project">${Utils.escapeHtml(projectName)}</span>
+            <span class="task-progress" style="color: ${this.getProgressColor(task.progress)}">${task.progress}%</span>
+          </div>
+        `;
+      }).join('');
+      
+      tasksHtml += `
+        <div class="meeting-member-group">
+          <div class="meeting-member-header">
+            <span class="member-avatar" style="background:${memberColor}">${memberName[0]}</span>
+            <span class="member-name">${Utils.escapeHtml(memberName)}</span>
+            <span class="member-role">${Utils.escapeHtml(memberRole)}</span>
+          </div>
+          <div class="meeting-tasks">
+            ${taskItems}
+          </div>
+        </div>
+      `;
+    });
+    
+    if (Object.keys(tasksByAssignee).length === 0) {
+      tasksHtml = '<p class="empty">本周暂无未完成任务</p>';
+    }
+    
+    container.innerHTML = `
+      <div class="meeting-page">
+        <div class="page-header">
+          <div class="week-nav">
+            <button class="btn btn-icon" id="prevMeetingWeek">◀</button>
+            <span class="current-week" id="meetingWeekDisplay">第${week}周 (${weekRange})</span>
+            <button class="btn btn-icon" id="nextMeetingWeek">▶</button>
+          </div>
+          <div class="meeting-actions">
+            <button class="btn btn-primary" id="saveMeetingBtn">💾 保存会议</button>
+          </div>
+        </div>
+        
+        <div class="meeting-form">
+          <div class="form-group">
+            <label>会议日期</label>
+            <input type="date" id="meetingDate" value="${meeting?.date || new Date().toISOString().split('T')[0]}">
+          </div>
+          
+          <div class="form-group">
+            <label>参会人员</label>
+            <div class="attendees-list">
+              ${attendeeCheckboxes}
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>会议备注</label>
+            <textarea id="meetingNotes" placeholder="会议讨论内容、决策事项等...">${meeting?.notes || ''}</textarea>
+          </div>
+        </div>
+        
+        <div class="meeting-tasks-section">
+          <h3>📋 本周未完成任务 (${Object.values(tasksByAssignee).flat().length}项)</h3>
+          <p class="meeting-hint">以下任务状态为"待处理"或"进行中"，"暂停"和"已完成"的任务不显示</p>
+          <div class="meeting-tasks-list">
+            ${tasksHtml}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Bind save event
+    Utils.$('#saveMeetingBtn')?.addEventListener('click', () => {
+      const date = Utils.$('#meetingDate').value;
+      const notes = Utils.$('#meetingNotes').value;
+      const attendees = Array.from(Utils.$$('#meetingView input[type="checkbox"]:checked')).map(cb => cb.value);
+      
+      store.saveMeeting(week, year, { date, notes, attendees });
+      alert('会议记录已保存！');
+      this.renderMeeting();
+    });
+    
+    // Bind week navigation
+    Utils.$('#prevMeetingWeek')?.addEventListener('click', () => {
+      let w = this.meetingWeek;
+      let y = this.meetingYear;
+      w--;
+      if (w < 1) {
+        y--;
+        w = Utils.getWeeksInYear(y);
+      }
+      this.meetingWeek = w;
+      this.meetingYear = y;
+      this.renderMeeting();
+    });
+    
+    Utils.$('#nextMeetingWeek')?.addEventListener('click', () => {
+      let w = this.meetingWeek;
+      let y = this.meetingYear;
+      w++;
+      if (w > Utils.getWeeksInYear(y)) {
+        w = 1;
+        y++;
+      }
+      this.meetingWeek = w;
+      this.meetingYear = y;
+      this.renderMeeting();
     });
   }
 

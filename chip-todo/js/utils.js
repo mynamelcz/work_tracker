@@ -88,6 +88,7 @@ const Utils = {
     const map = {
       'pending': '待处理',
       'in_progress': '进行中',
+      'paused': '已暂停',
       'completed': '已完成'
     };
     return map[status] || status;
@@ -97,6 +98,7 @@ const Utils = {
     const map = {
       'pending': 'status-pending',
       'in_progress': 'status-in-progress',
+      'paused': 'status-paused',
       'completed': 'status-completed'
     };
     return map[status] || '';

@@ -126,9 +126,27 @@ class DataStore {
     const index = this.data.tasks.findIndex(t => t.id === id);
     if (index !== -1) {
       const task = this.data.tasks[index];
-      if (updates.progress !== undefined) {
+      
+      // Handle manual status change first
+      if (updates.status !== undefined && updates.status !== task.status) {
+        if (updates.status === 'paused') {
+          updates.pausedAt = new Date().toISOString();
+        } else if (task.status === 'paused' && updates.status === 'in_progress') {
+          updates.pausedAt = null;
+        } else if (updates.status === 'completed') {
+          updates.progress = 100;
+          updates.completedAt = new Date().toISOString();
+        } else if (updates.status === 'pending') {
+          updates.progress = 0;
+          updates.completedAt = null;
+          updates.pausedAt = null;
+        }
+      }
+      
+      // Auto-sync progress -> status (only if not manually set to paused)
+      if (updates.progress !== undefined && !updates.status) {
         updates.progress = Math.min(100, Math.max(0, parseInt(updates.progress) || 0));
-        if (updates.progress >= 100 && task.status !== 'completed') {
+        if (updates.progress >= 100 && task.status !== 'completed' && task.status !== 'paused') {
           updates.status = 'completed';
           updates.completedAt = new Date().toISOString();
         } else if (updates.progress > 0 && updates.progress < 100 && task.status === 'pending') {
@@ -138,6 +156,7 @@ class DataStore {
           updates.completedAt = null;
         }
       }
+      
       this.data.tasks[index] = { ...task, ...updates };
       this.save();
     }
@@ -253,6 +272,81 @@ class DataStore {
       progress: totalProgress,
       membersWithTasks
     };
+  }
+
+  // Meeting Records
+  getMeetings() {
+    const stored = localStorage.getItem('chip_todo_meetings');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  saveMeetings(meetings) {
+    localStorage.setItem('chip_todo_meetings', JSON.stringify(meetings));
+  }
+
+  getMeeting(week, year) {
+    const meetings = this.getMeetings();
+    const weekKey = this.getWeekKey(week, year);
+    return meetings.find(m => m.weekKey === weekKey) || null;
+  }
+
+  saveMeeting(week, year, data) {
+    const meetings = this.getMeetings();
+    const weekKey = this.getWeekKey(week, year);
+    const existingIndex = meetings.findIndex(m => m.weekKey === weekKey);
+    
+    const meeting = {
+      weekKey,
+      week,
+      year,
+      date: data.date || new Date().toISOString().split('T')[0],
+      attendees: data.attendees || [],
+      notes: data.notes || '',
+      createdAt: existingIndex >= 0 ? meetings[existingIndex].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    if (existingIndex >= 0) {
+      meetings[existingIndex] = meeting;
+    } else {
+      meetings.push(meeting);
+    }
+    
+    this.saveMeetings(meetings);
+    return meeting;
+  }
+
+  // Get tasks excluding completed and paused
+  getActiveTasks(week, year) {
+    const weekKey = this.getWeekKey(week, year);
+    return this.data.tasks.filter(t => 
+      t.weekKey === weekKey && 
+      t.status !== 'completed' && 
+      t.status !== 'paused'
+    );
+  }
+
+  // Get tasks grouped by assignee
+  getTasksByAssignee(week, year) {
+    const tasks = this.getActiveTasks(week, year);
+    const grouped = {};
+    
+    tasks.forEach(task => {
+      const assigneeId = task.assignee || 'unassigned';
+      if (!grouped[assigneeId]) {
+        grouped[assigneeId] = [];
+      }
+      grouped[assigneeId].push(task);
+    });
+    
+    return grouped;
   }
 }
 
