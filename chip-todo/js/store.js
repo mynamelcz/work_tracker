@@ -45,7 +45,7 @@ class DataStore {
   }
 
   addMember(member) {
-    const id = 'm_' + Date.now();
+    const id = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     this.data.members.push({
       id,
       name: member.name,
@@ -76,7 +76,7 @@ class DataStore {
   }
 
   addProject(project) {
-    const id = 'p_' + Date.now();
+    const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     this.data.projects.push({
       id,
       name: project.name,
@@ -104,7 +104,7 @@ class DataStore {
   }
 
   addTask(task) {
-    const id = 't_' + Date.now();
+    const id = 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     this.data.tasks.push({
       id,
       projectId: task.projectId,
