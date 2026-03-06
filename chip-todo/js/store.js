@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'chip_todo_data';
 const HISTORY_KEY = 'chip_todo_history';
+const MEETINGS_KEY = 'chip_todo_meetings';
 
 const DEFAULT_DATA = {
   members: [],
@@ -11,7 +12,40 @@ const DEFAULT_DATA = {
 
 class DataStore {
   constructor() {
-    this.data = this.load();
+    this.historyCache = null;
+    this.meetingsCache = null;
+    this.data = this.normalizeData(this.load());
+  }
+
+  clone(value) {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  normalizeData(raw) {
+    const data = raw && typeof raw === 'object' ? raw : {};
+    const current = this.getCurrentWeek();
+
+    return {
+      members: Array.isArray(data.members) ? data.members : [],
+      projects: Array.isArray(data.projects) ? data.projects : [],
+      tasks: Array.isArray(data.tasks) ? data.tasks : [],
+      currentWeek: Number.isInteger(data.currentWeek) ? data.currentWeek : current.week,
+      currentYear: Number.isInteger(data.currentYear) ? data.currentYear : current.year
+    };
+  }
+
+  sanitizeName(value) {
+    return String(value || '').trim();
+  }
+
+  generateId(prefix) {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return `${prefix}_${crypto.randomUUID()}`;
+    }
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
   load() {
@@ -23,10 +57,11 @@ class DataStore {
         console.error('Failed to parse stored data:', e);
       }
     }
-    return { ...DEFAULT_DATA };
+    return this.clone(DEFAULT_DATA);
   }
 
   save() {
+    this.data = this.normalizeData(this.data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
   }
 
@@ -45,11 +80,13 @@ class DataStore {
   }
 
   addMember(member) {
-    const id = 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const name = this.sanitizeName(member.name);
+    if (!name) return null;
+
+    const id = this.generateId('m');
     this.data.members.push({
       id,
-      name: member.name,
-      role: member.role || '成员',
+      name,
       color: member.color || this.generateColor(),
       createdAt: new Date().toISOString()
     });
@@ -60,7 +97,13 @@ class DataStore {
   updateMember(id, updates) {
     const index = this.data.members.findIndex(m => m.id === id);
     if (index !== -1) {
-      this.data.members[index] = { ...this.data.members[index], ...updates };
+      const nextUpdates = { ...updates };
+      if (nextUpdates.name !== undefined) {
+        const name = this.sanitizeName(nextUpdates.name);
+        if (!name) return;
+        nextUpdates.name = name;
+      }
+      this.data.members[index] = { ...this.data.members[index], ...nextUpdates };
       this.save();
     }
   }
@@ -76,12 +119,16 @@ class DataStore {
   }
 
   addProject(project) {
-    const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const name = this.sanitizeName(project.name);
+    if (!name) return null;
+
+    const id = this.generateId('p');
     this.data.projects.push({
       id,
-      name: project.name,
+      name,
       description: project.description || '',
       members: project.members || [],
+      status: project.status || 'not_started',
       weekKey: this.getWeekKey(this.data.currentWeek, this.data.currentYear),
       createdAt: new Date().toISOString()
     });
@@ -92,7 +139,13 @@ class DataStore {
   updateProject(id, updates) {
     const index = this.data.projects.findIndex(p => p.id === id);
     if (index !== -1) {
-      this.data.projects[index] = { ...this.data.projects[index], ...updates };
+      const nextUpdates = { ...updates };
+      if (nextUpdates.name !== undefined) {
+        const name = this.sanitizeName(nextUpdates.name);
+        if (!name) return;
+        nextUpdates.name = name;
+      }
+      this.data.projects[index] = { ...this.data.projects[index], ...nextUpdates };
       this.save();
     }
   }
@@ -104,19 +157,24 @@ class DataStore {
   }
 
   addTask(task) {
-    const id = 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const name = this.sanitizeName(task.name);
+    if (!name || !task.projectId) return null;
+
+    const id = this.generateId('t');
+    const progress = task.progress !== undefined ? Math.min(100, Math.max(0, parseInt(task.progress, 10) || 0)) : 0;
+
     this.data.tasks.push({
       id,
       projectId: task.projectId,
-      name: task.name,
+      name,
       description: task.description || '',
       assignee: task.assignee || null,
       status: task.status || 'pending',
       priority: task.priority || 'medium',
-      progress: task.progress !== undefined ? task.progress : 0,
+      progress,
       weekKey: this.getWeekKey(this.data.currentWeek, this.data.currentYear),
       createdAt: new Date().toISOString(),
-      completedAt: null
+      completedAt: progress >= 100 ? new Date().toISOString() : null
     });
     this.save();
     return id;
@@ -124,42 +182,70 @@ class DataStore {
 
   updateTask(id, updates) {
     const index = this.data.tasks.findIndex(t => t.id === id);
-    if (index !== -1) {
-      const task = this.data.tasks[index];
-      
-      // Handle manual status change first
-      if (updates.status !== undefined && updates.status !== task.status) {
-        if (updates.status === 'paused') {
-          updates.pausedAt = new Date().toISOString();
-        } else if (task.status === 'paused' && updates.status === 'in_progress') {
-          updates.pausedAt = null;
-        } else if (updates.status === 'completed') {
-          updates.progress = 100;
-          updates.completedAt = new Date().toISOString();
-        } else if (updates.status === 'pending') {
-          updates.progress = 0;
-          updates.completedAt = null;
-          updates.pausedAt = null;
-        }
-      }
-      
-      // Auto-sync progress -> status (only if not manually set to paused)
-      if (updates.progress !== undefined && !updates.status) {
-        updates.progress = Math.min(100, Math.max(0, parseInt(updates.progress) || 0));
-        if (updates.progress >= 100 && task.status !== 'completed' && task.status !== 'paused') {
-          updates.status = 'completed';
-          updates.completedAt = new Date().toISOString();
-        } else if (updates.progress > 0 && updates.progress < 100 && task.status === 'pending') {
-          updates.status = 'in_progress';
-        } else if (updates.progress === 0 && task.status === 'completed') {
-          updates.status = 'pending';
-          updates.completedAt = null;
-        }
-      }
-      
-      this.data.tasks[index] = { ...task, ...updates };
-      this.save();
+    if (index === -1) return;
+
+    const task = this.data.tasks[index];
+    const nextUpdates = { ...updates };
+
+    if (nextUpdates.name !== undefined) {
+      const name = this.sanitizeName(nextUpdates.name);
+      if (!name) return;
+      nextUpdates.name = name;
     }
+
+    if (nextUpdates.progress !== undefined) {
+      nextUpdates.progress = Math.min(100, Math.max(0, parseInt(nextUpdates.progress, 10) || 0));
+    }
+
+    if (nextUpdates.status !== undefined && nextUpdates.status !== task.status) {
+      if (nextUpdates.status === 'paused') {
+        nextUpdates.pausedAt = new Date().toISOString();
+        nextUpdates.completedAt = null;
+        if (nextUpdates.progress === undefined) {
+          const currentProgress = Math.min(99, Math.max(1, parseInt(task.progress, 10) || 1));
+          nextUpdates.progress = currentProgress;
+        }
+      } else if (nextUpdates.status === 'completed') {
+        nextUpdates.progress = 100;
+        nextUpdates.completedAt = new Date().toISOString();
+        nextUpdates.pausedAt = null;
+      } else if (nextUpdates.status === 'pending') {
+        nextUpdates.progress = 0;
+        nextUpdates.completedAt = null;
+        nextUpdates.pausedAt = null;
+      } else if (nextUpdates.status === 'in_progress') {
+        nextUpdates.completedAt = null;
+        nextUpdates.pausedAt = null;
+        if (nextUpdates.progress === undefined) {
+          const currentProgress = parseInt(task.progress, 10) || 0;
+          nextUpdates.progress = currentProgress <= 0 || currentProgress >= 100 ? 1 : currentProgress;
+        } else if (nextUpdates.progress >= 100) {
+          nextUpdates.progress = 99;
+        }
+      }
+    }
+
+    // Keep status and progress in sync when only progress is edited.
+    if (nextUpdates.progress !== undefined && nextUpdates.status === undefined) {
+      if (nextUpdates.progress >= 100 && task.status !== 'paused') {
+        nextUpdates.status = 'completed';
+        nextUpdates.completedAt = new Date().toISOString();
+        nextUpdates.pausedAt = null;
+      } else if (nextUpdates.progress > 0 && nextUpdates.progress < 100) {
+        if (task.status === 'pending' || task.status === 'completed') {
+          nextUpdates.status = 'in_progress';
+        }
+        if (task.status === 'completed') {
+          nextUpdates.completedAt = null;
+        }
+      } else if (nextUpdates.progress === 0 && task.status !== 'paused') {
+        nextUpdates.status = 'pending';
+        nextUpdates.completedAt = null;
+      }
+    }
+
+    this.data.tasks[index] = { ...task, ...nextUpdates };
+    this.save();
   }
 
   deleteTask(id) {
@@ -186,44 +272,60 @@ class DataStore {
     return this.data.members.filter(m => project.members.includes(m.id));
   }
 
+  loadHistory() {
+    if (this.historyCache) {
+      return this.historyCache;
+    }
+
+    const stored = localStorage.getItem(HISTORY_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        this.historyCache = Array.isArray(parsed) ? parsed : [];
+        return this.historyCache;
+      } catch (e) {
+        this.historyCache = [];
+        return this.historyCache;
+      }
+    }
+
+    this.historyCache = [];
+    return this.historyCache;
+  }
+
+  saveHistory(history) {
+    this.historyCache = Array.isArray(history) ? history : [];
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(this.historyCache));
+  }
+
   archiveCurrentWeek() {
     const weekKey = this.getWeekKey(this.data.currentWeek, this.data.currentYear);
     const history = this.loadHistory();
-    
+
     const weekData = {
       weekKey,
       week: this.data.currentWeek,
       year: this.data.currentYear,
-      members: this.data.members,
-      projects: this.data.projects.filter(p => p.weekKey === weekKey),
-      tasks: this.data.tasks.filter(t => t.weekKey === weekKey),
+      members: this.clone(this.data.members),
+      projects: this.clone(this.data.projects.filter(p => p.weekKey === weekKey)),
+      tasks: this.clone(this.data.tasks.filter(t => t.weekKey === weekKey)),
       archivedAt: new Date().toISOString()
     };
-    
+
     history.push(weekData);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    
+    this.saveHistory(history);
+
     this.data.tasks = this.data.tasks.filter(t => t.weekKey !== weekKey);
     this.data.projects = this.data.projects.filter(p => p.weekKey !== weekKey);
     this.save();
   }
 
-  loadHistory() {
-    const stored = localStorage.getItem(HISTORY_KEY);
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  }
-
   exportData() {
     return JSON.stringify({
-      data: this.data,
-      history: this.loadHistory(),
+      version: 2,
+      data: this.clone(this.data),
+      history: this.clone(this.loadHistory()),
+      meetings: this.clone(this.getMeetings()),
       exportedAt: new Date().toISOString()
     }, null, 2);
   }
@@ -231,13 +333,16 @@ class DataStore {
   importData(jsonString) {
     try {
       const imported = JSON.parse(jsonString);
-      if (imported.data) {
-        this.data = imported.data;
-        this.save();
+      if (!imported || typeof imported !== 'object') {
+        return false;
       }
-      if (imported.history) {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(imported.history));
-      }
+
+      const importedData = imported.data || imported;
+      this.data = this.normalizeData(importedData);
+      this.save();
+
+      this.saveHistory(Array.isArray(imported.history) ? imported.history : []);
+      this.saveMeetings(Array.isArray(imported.meetings) ? imported.meetings : []);
       return true;
     } catch (e) {
       console.error('Import failed:', e);
@@ -247,7 +352,7 @@ class DataStore {
 
   generateColor() {
     const colors = [
-      '#3B82F6', '#10B981', '#F59E0B', '#EF4444', 
+      '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
       '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'
     ];
     return colors[Math.floor(Math.random() * colors.length)];
@@ -259,11 +364,10 @@ class DataStore {
     const completed = weekTasks.filter(t => t.progress >= 100).length;
     const inProgress = weekTasks.filter(t => t.progress > 0 && t.progress < 100).length;
     const pending = weekTasks.filter(t => !t.progress || t.progress === 0).length;
-    
+
     const membersWithTasks = new Set(weekTasks.map(t => t.assignee).filter(Boolean)).size;
-    
     const totalProgress = total > 0 ? Math.round(weekTasks.reduce((sum, t) => sum + (t.progress || 0), 0) / total) : 0;
-    
+
     return {
       total,
       completed,
@@ -276,19 +380,29 @@ class DataStore {
 
   // Meeting Records
   getMeetings() {
-    const stored = localStorage.getItem('chip_todo_meetings');
+    if (this.meetingsCache) {
+      return this.meetingsCache;
+    }
+
+    const stored = localStorage.getItem(MEETINGS_KEY);
     if (stored) {
       try {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        this.meetingsCache = Array.isArray(parsed) ? parsed : [];
+        return this.meetingsCache;
       } catch (e) {
-        return [];
+        this.meetingsCache = [];
+        return this.meetingsCache;
       }
     }
-    return [];
+
+    this.meetingsCache = [];
+    return this.meetingsCache;
   }
 
   saveMeetings(meetings) {
-    localStorage.setItem('chip_todo_meetings', JSON.stringify(meetings));
+    this.meetingsCache = Array.isArray(meetings) ? meetings : [];
+    localStorage.setItem(MEETINGS_KEY, JSON.stringify(this.meetingsCache));
   }
 
   getMeeting(week, year) {
@@ -301,7 +415,9 @@ class DataStore {
     const meetings = this.getMeetings();
     const weekKey = this.getWeekKey(week, year);
     const existingIndex = meetings.findIndex(m => m.weekKey === weekKey);
-    
+
+    const existingMeeting = existingIndex >= 0 ? meetings[existingIndex] : null;
+
     const meeting = {
       weekKey,
       week,
@@ -309,26 +425,63 @@ class DataStore {
       date: data.date || new Date().toISOString().split('T')[0],
       attendees: data.attendees || [],
       notes: data.notes || '',
-      createdAt: existingIndex >= 0 ? meetings[existingIndex].createdAt : new Date().toISOString(),
+      taskReports: existingMeeting?.taskReports || {},
+      createdAt: existingMeeting?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    
+
     if (existingIndex >= 0) {
       meetings[existingIndex] = meeting;
     } else {
       meetings.push(meeting);
     }
-    
+
     this.saveMeetings(meetings);
     return meeting;
+  }
+
+  updateTaskReport(week, year, taskId, report) {
+    const meetings = this.getMeetings();
+    const weekKey = this.getWeekKey(week, year);
+    const existingIndex = meetings.findIndex(m => m.weekKey === weekKey);
+
+    if (existingIndex >= 0) {
+      const taskReports = meetings[existingIndex].taskReports || {};
+      taskReports[taskId] = {
+        work: report.work || '',
+        issues: report.issues || '',
+        plan: report.plan || '',
+        updatedAt: new Date().toISOString()
+      };
+      meetings[existingIndex].taskReports = taskReports;
+      meetings[existingIndex].updatedAt = new Date().toISOString();
+      this.saveMeetings(meetings);
+    }
+  }
+
+  getMeetingsList() {
+    const meetings = [...this.getMeetings()];
+    return meetings
+      .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.week - a.week;
+      })
+      .map(m => ({
+        weekKey: m.weekKey,
+        week: m.week,
+        year: m.year,
+        date: m.date,
+        notes: m.notes?.substring(0, 50) || '',
+        attendeeCount: m.attendees?.length || 0
+      }));
   }
 
   // Get tasks excluding completed and paused
   getActiveTasks(week, year) {
     const weekKey = this.getWeekKey(week, year);
-    return this.data.tasks.filter(t => 
-      t.weekKey === weekKey && 
-      t.status !== 'completed' && 
+    return this.data.tasks.filter(t =>
+      t.weekKey === weekKey &&
+      t.status !== 'completed' &&
       t.status !== 'paused'
     );
   }
@@ -337,7 +490,7 @@ class DataStore {
   getTasksByAssignee(week, year) {
     const tasks = this.getActiveTasks(week, year);
     const grouped = {};
-    
+
     tasks.forEach(task => {
       const assigneeId = task.assignee || 'unassigned';
       if (!grouped[assigneeId]) {
@@ -345,7 +498,7 @@ class DataStore {
       }
       grouped[assigneeId].push(task);
     });
-    
+
     return grouped;
   }
 }

@@ -5,7 +5,7 @@ class ChipTodoApp {
     this.currentMember = null;
     this.meetingWeek = null;
     this.meetingYear = null;
-    this.boardFilter = 'week'; // week, month, year, all
+    this.boardFilter = 'all'; // all, not_started, in_progress, paused
     this.init();
   }
 
@@ -26,36 +26,33 @@ class ChipTodoApp {
     const app = Utils.$('#app');
     app.innerHTML = `
       <header class="header">
-        <h1>🔬 芯片测试工作看板</h1>
+        <h1>${Utils.icon('chip')} 芯片测试工作看板</h1>
       </header>
       
       <nav class="tabs">
-        <button class="tab ${this.currentView === 'board' ? 'active' : ''}" data-view="board">📊 看板</button>
-        <button class="tab ${this.currentView === 'projects' ? 'active' : ''}" data-view="projects">📁 项目</button>
-        <button class="tab ${this.currentView === 'members' ? 'active' : ''}" data-view="members">👥 人员</button>
-        <button class="tab ${this.currentView === 'meeting' ? 'active' : ''}" data-view="meeting">📅 会议</button>
+        <button class="tab ${this.currentView === 'board' ? 'active' : ''}" data-view="board">${Utils.icon('board')} 看板</button>
+        <button class="tab ${this.currentView === 'management' ? 'active' : ''}" data-view="management">${Utils.icon('settings')} 管理</button>
+        <button class="tab ${this.currentView === 'meeting' ? 'active' : ''}" data-view="meeting">${Utils.icon('calendar')} 会议</button>
       </nav>
       
       <main class="main-content">
         <div id="boardView" class="view ${this.currentView === 'board' ? '' : 'hidden'}"></div>
-        <div id="projectsView" class="view ${this.currentView === 'projects' ? '' : 'hidden'}"></div>
-        <div id="membersView" class="view ${this.currentView === 'members' ? '' : 'hidden'}"></div>
+        <div id="managementView" class="view ${this.currentView === 'management' ? '' : 'hidden'}"></div>
         <div id="meetingView" class="view ${this.currentView === 'meeting' ? '' : 'hidden'}"></div>
       </main>
       
       <footer class="footer">
         <div class="stats" id="stats"></div>
         <div class="actions">
-          <button class="btn btn-secondary" id="exportBtn">📤 导出</button>
-          <button class="btn btn-secondary" id="importBtn">📥 导入</button>
+          <button class="btn btn-secondary" id="exportBtn">${Utils.icon('download')} 导出</button>
+          <button class="btn btn-secondary" id="importBtn">${Utils.icon('upload')} 导入</button>
           <input type="file" id="importFile" accept=".json" style="display:none">
         </div>
       </footer>
     `;
     
     this.renderBoard();
-    this.renderProjects();
-    this.renderMembers();
+    this.renderManagement();
     this.renderMeeting();
     this.updateStats();
   }
@@ -94,13 +91,14 @@ class ChipTodoApp {
   updateStats() {
     const stats = store.getStats(store.data.currentWeek, store.data.currentYear);
     const statsEl = Utils.$('#stats');
+    if (!statsEl) return;
     statsEl.innerHTML = `
-      <span>📊 ${stats.completed}/${stats.total} 任务完成</span>
+      <span>${Utils.icon('chart')} ${stats.completed}/${stats.total} 任务完成</span>
       <span class="progress-bar">
         <span class="progress-fill" style="width: ${stats.progress}%"></span>
       </span>
       <span>${stats.progress}%</span>
-      <span>👤 负责人: ${stats.membersWithTasks}人</span>
+      <span>${Utils.icon('user')} 负责人: ${stats.membersWithTasks}人</span>
     `;
   }
 
@@ -108,22 +106,8 @@ class ChipTodoApp {
     const container = Utils.$('#boardView');
     const members = store.data.members;
     
-    // Get filtered tasks and projects based on boardFilter
+    // Get filtered projects based on boardFilter
     const { tasks, projects } = this.getFilteredData(this.boardFilter);
-    
-    // Group tasks by assignee for gantt
-    const tasksByAssignee = {};
-    tasks.forEach(task => {
-      const assigneeId = task.assignee || 'unassigned';
-      if (!tasksByAssignee[assigneeId]) {
-        tasksByAssignee[assigneeId] = [];
-      }
-      tasksByAssignee[assigneeId].push(task);
-    });
-    
-    const filterLabels = { week: '本周', month: '本月', year: '本年', all: '所有' };
-    const currentFilterLabel = filterLabels[this.boardFilter];
-    
     container.innerHTML = `
       <div class="board">
         <div class="sidebar">
@@ -131,17 +115,16 @@ class ChipTodoApp {
           <div class="project-list" id="projectList">
             ${projects.map(p => this.renderProjectItem(p)).join('')}
           </div>
-          <button class="btn btn-primary btn-block" id="addProjectBtn">+ 新建项目</button>
         </div>
         
         <div class="board-content">
           <div class="board-header">
             <h3>任务甘特图</h3>
             <div class="filter-tabs">
-              <button class="filter-tab ${this.boardFilter === 'week' ? 'active' : ''}" data-filter="week">本周</button>
-              <button class="filter-tab ${this.boardFilter === 'month' ? 'active' : ''}" data-filter="month">本月</button>
-              <button class="filter-tab ${this.boardFilter === 'year' ? 'active' : ''}" data-filter="year">本年</button>
-              <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">所有</button>
+              <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">全部</button>
+              <button class="filter-tab ${this.boardFilter === 'not_started' ? 'active' : ''}" data-filter="not_started">未开始</button>
+              <button class="filter-tab ${this.boardFilter === 'in_progress' ? 'active' : ''}" data-filter="in_progress">进行中</button>
+              <button class="filter-tab ${this.boardFilter === 'paused' ? 'active' : ''}" data-filter="paused">暂停</button>
             </div>
           </div>
           ${tasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(tasks, members, projects)}
@@ -154,48 +137,18 @@ class ChipTodoApp {
   }
 
   getFilteredData(filter) {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const currentWeek = Utils.getISOWeek();
+    let filteredProjects;
     
-    let tasks, projects;
-    
-    if (filter === 'week') {
-      // 本周：显示所有当前未完成的任务（pending/in_progress/paused）
-      tasks = store.data.tasks.filter(t => 
-        t.status === 'pending' || t.status === 'in_progress' || t.status === 'paused'
-      );
-      // 项目显示与任务相关的所有项目
-      const projectIds = new Set(tasks.map(t => t.projectId));
-      projects = store.data.projects.filter(p => projectIds.has(p.id));
-    } else if (filter === 'month') {
-      // 本月：显示 weekKey 在本月的所有任务
-      tasks = store.data.tasks.filter(t => {
-        if (!t.weekKey) return false;
-        const taskYear = parseInt(t.weekKey.split('-')[0]);
-        const taskWeek = parseInt(t.weekKey.split('-W')[1]);
-        const taskDate = this.getWeekStartDate(taskYear, taskWeek);
-        return taskDate.getFullYear() === currentYear && taskDate.getMonth() === currentMonth;
-      });
-      const projectIds = new Set(tasks.map(t => t.projectId));
-      projects = store.data.projects.filter(p => projectIds.has(p.id));
-    } else if (filter === 'year') {
-      // 本年：显示 year 在本年的所有任务
-      tasks = store.data.tasks.filter(t => {
-        if (!t.weekKey) return false;
-        const taskYear = parseInt(t.weekKey.split('-')[0]);
-        return taskYear === currentYear;
-      });
-      const projectIds = new Set(tasks.map(t => t.projectId));
-      projects = store.data.projects.filter(p => projectIds.has(p.id));
+    if (filter === 'all') {
+      filteredProjects = store.data.projects;
     } else {
-      // 所有：显示所有任务
-      tasks = store.data.tasks;
-      projects = store.data.projects;
+      filteredProjects = store.data.projects.filter(p => p.status === filter);
     }
     
-    return { tasks, projects };
+    const projectIds = new Set(filteredProjects.map(p => p.id));
+    const tasks = store.data.tasks.filter(t => projectIds.has(t.projectId));
+    
+    return { tasks, projects: filteredProjects };
   }
 
   getWeekStartDate(year, week) {
@@ -220,13 +173,20 @@ class ChipTodoApp {
   }
 
   renderProjectItem(project) {
-    const taskCount = store.getTasksByProject(project.id).length;
-    const completedCount = store.getTasksByProject(project.id).filter(t => t.status === 'completed').length;
+    const projectTasks = store.getTasksByProject(project.id);
+    const taskCount = projectTasks.length;
+    const completedCount = projectTasks.filter(t => t.status === 'completed').length;
     const isActive = this.currentProject === project.id ? 'active' : '';
+    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
+    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
+    const projectStatus = project.status || 'not_started';
     
     return `
       <div class="project-item ${isActive}" data-id="${project.id}">
-        <div class="project-name">${Utils.escapeHtml(project.name)}</div>
+        <div class="project-item-header">
+          <div class="project-name">${Utils.escapeHtml(project.name)}</div>
+          <span class="project-status-dot ${statusClass[projectStatus]}" title="${statusLabels[projectStatus]}"></span>
+        </div>
         <div class="project-meta">${completedCount}/${taskCount} 任务</div>
       </div>
     `;
@@ -242,6 +202,7 @@ class ChipTodoApp {
       tasksByAssignee[assigneeId].push(task);
     });
     
+    const projectMap = new Map(projects.map(p => [p.id, p]));
     let html = '<div class="gantt">';
     
     Object.entries(tasksByAssignee).forEach(([assigneeId, memberTasks]) => {
@@ -257,7 +218,7 @@ class ChipTodoApp {
           </div>
           <div class="gantt-tasks">
             ${memberTasks.map(task => {
-              const project = projects.find(p => p.id === task.projectId);
+              const project = projectMap.get(task.projectId);
               return this.renderGanttTask(task, project);
             }).join('')}
           </div>
@@ -276,14 +237,18 @@ class ChipTodoApp {
     const progressColor = this.getProgressColor(progress);
     
     const priorityLabels = { low: '低', medium: '中', high: '高' };
-    const priorityEmoji = { low: '🔵', medium: '🟡', high: '🔴' };
+    const priorityIcons = { 
+      low: Utils.icon('arrowDown'), 
+      medium: Utils.icon('minus'), 
+      high: Utils.icon('arrowUp') 
+    };
     const priority = task.priority || 'medium';
     
     return `
       <div class="gantt-task ${statusClass}" data-id="${task.id}">
         <div class="task-info">
           <span class="task-project">${project ? Utils.escapeHtml(project.name) : '未指定项目'}</span>
-          <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityEmoji[priority]}</span>
+          <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]}</span>
           <span class="task-name">${Utils.escapeHtml(task.name)}</span>
         </div>
         <div class="task-bar">
@@ -295,19 +260,11 @@ class ChipTodoApp {
   }
 
   bindBoardEvents() {
-    Utils.$('#addProjectBtn').addEventListener('click', () => this.showProjectModal());
-    
     Utils.$$('.project-item').forEach(item => {
       item.addEventListener('click', () => {
         this.currentProject = item.dataset.id;
         this.renderBoard();
         this.showProjectDetail(item.dataset.id);
-      });
-    });
-    
-    Utils.$$('.gantt-task').forEach(taskEl => {
-      taskEl.addEventListener('click', () => {
-        this.showTaskModal(taskEl.dataset.id);
       });
     });
   }
@@ -328,46 +285,96 @@ class ChipTodoApp {
     return '#EF4444';
   }
 
-  renderProjects() {
-    const container = Utils.$('#projectsView');
+  renderManagement() {
+    const container = Utils.$('#managementView');
     const allProjects = store.data.projects;
+    const allMembers = store.data.members;
     
     container.innerHTML = `
-      <div class="projects-page">
-        <div class="page-header">
-          <h2>📁 项目管理</h2>
-          <button class="btn btn-primary" id="newProjectBtn">+ 新建项目</button>
+      <div class="management-page">
+        <div class="management-section">
+          <div class="page-header">
+            <h2>${Utils.icon('folder')} 项目管理</h2>
+            <button class="btn btn-primary" id="newProjectBtn">${Utils.icon('plus')} 新建项目</button>
+          </div>
+          ${allProjects.length === 0 ? '<p class="empty">暂无项目</p>' : ''}
+          <div class="project-cards">
+            ${allProjects.map(p => this.renderProjectCard(p)).join('')}
+          </div>
         </div>
         
-        ${allProjects.length === 0 ? '<p class="empty">暂无项目</p>' : ''}
-        
-        <div class="project-cards">
-          ${allProjects.map(p => this.renderProjectCard(p)).join('')}
+        <div class="management-section">
+          <div class="page-header">
+            <h2>${Utils.icon('user')} 人员管理</h2>
+            <button class="btn btn-primary" id="newMemberBtn">${Utils.icon('plus')} 添加成员</button>
+          </div>
+          ${allMembers.length === 0 ? '<p class="empty">暂无成员</p>' : ''}
+          <div class="member-cards">
+            ${allMembers.map(m => this.renderMemberCard(m)).join('')}
+          </div>
         </div>
       </div>
     `;
     
     Utils.$('#newProjectBtn')?.addEventListener('click', () => this.showProjectModal());
+    Utils.$('#newMemberBtn')?.addEventListener('click', () => this.showMemberModal());
     
     Utils.$$('.project-card').forEach(card => {
       card.querySelector('.view-btn')?.addEventListener('click', () => {
         this.showProjectDetail(card.dataset.id);
       });
     });
+    
+    Utils.$$('.member-card').forEach(card => {
+      card.querySelector('.edit-btn')?.addEventListener('click', () => {
+        const member = store.data.members.find(m => m.id === card.dataset.id);
+        this.showMemberModal(member);
+      });
+      card.querySelector('.delete-btn')?.addEventListener('click', async () => {
+        if (await Utils.confirm('确定要删除此成员吗？')) {
+          store.deleteMember(card.dataset.id);
+          this.render();
+        }
+      });
+    });
+  }
+
+  renderMemberCard(member) {
+    const weekTasks = store.getTasksByWeek(store.data.currentWeek, store.data.currentYear);
+    const memberTasks = weekTasks.filter(t => t.assignee === member.id);
+    const completed = memberTasks.filter(t => t.status === 'completed').length;
+    
+    return `
+      <div class="member-card" data-id="${member.id}">
+        <div class="member-avatar large" style="background:${member.color}">${member.name[0]}</div>
+        <h3>${Utils.escapeHtml(member.name)}</h3>
+        <p>本周任务: ${completed}/${memberTasks.length} 完成</p>
+        <div class="member-actions">
+          <button class="btn btn-secondary btn-sm edit-btn">编辑</button>
+          <button class="btn btn-danger btn-sm delete-btn">删除</button>
+        </div>
+      </div>
+    `;
   }
 
   renderProjectCard(project) {
     const tasks = store.getTasksByProject(project.id);
     const members = store.getProjectMembers(project.id);
     const completed = tasks.filter(t => t.status === 'completed').length;
+    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
+    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
+    const projectStatus = project.status || 'not_started';
     
     return `
       <div class="project-card" data-id="${project.id}">
-        <h3>${Utils.escapeHtml(project.name)}</h3>
+        <div class="project-card-header">
+          <h3>${Utils.escapeHtml(project.name)}</h3>
+          <span class="project-status-badge ${statusClass[projectStatus]}">${statusLabels[projectStatus]}</span>
+        </div>
         <p>${Utils.escapeHtml(project.description) || '暂无描述'}</p>
         <div class="project-card-meta">
-          <span>📝 ${completed}/${tasks.length} 任务</span>
-          <span>👥 ${members.length} 人</span>
+          <span>${Utils.icon('document')} ${completed}/${tasks.length} 任务</span>
+          <span>${Utils.icon('user')} ${members.length} 人</span>
         </div>
         <div class="project-members">
           ${members.map(m => `<span class="member-chip" style="background:${m.color}">${m.name[0]}</span>`).join('')}
@@ -383,17 +390,29 @@ class ChipTodoApp {
     
     const tasks = store.getTasksByProject(projectId);
     const members = store.getProjectMembers(projectId);
+    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
+    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
+    const currentStatus = project.status || 'not_started';
     
     const modalContent = Utils.createElement('div', { class: 'project-detail-modal' });
     modalContent.innerHTML = `
       <div class="modal-header">
         <h2>${Utils.escapeHtml(project.name)}</h2>
-        <button class="btn btn-icon close-btn">✕</button>
+        <button class="btn btn-icon close-btn">${Utils.icon('close')}</button>
       </div>
       <p>${Utils.escapeHtml(project.description) || '暂无描述'}</p>
       
       <div class="project-detail-section">
-        <h3>👥 参与人员</h3>
+        <h3>${Utils.icon('chart')} 项目状态</h3>
+        <select name="status" class="project-status-select" id="projectStatusSelect">
+          <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
+          <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
+          <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
+        </select>
+      </div>
+      
+      <div class="project-detail-section">
+        <h3>${Utils.icon('user')} 参与人员</h3>
         <div class="member-list">
           ${members.length === 0 ? '<p>暂无成员</p>' : members.map(m => `
             <div class="member-item">
@@ -407,7 +426,7 @@ class ChipTodoApp {
       </div>
       
       <div class="project-detail-section">
-        <h3>📝 任务列表</h3>
+        <h3>${Utils.icon('document')} 任务列表</h3>
         <button class="btn btn-primary btn-sm" id="addTaskToProject">+ 添加任务</button>
         <div class="task-list">
           ${tasks.length === 0 ? '<p>暂无任务</p>' : tasks.map(t => this.renderTaskItem(t)).join('')}
@@ -415,15 +434,30 @@ class ChipTodoApp {
       </div>
       
       <div class="modal-actions">
-        <button class="btn btn-danger" id="deleteProject">删除项目</button>
+        <button class="btn btn-danger" id="deleteProject">${Utils.icon('trash')} 删除项目</button>
       </div>
     `;
     
     const overlay = Utils.showModal(modalContent);
     
     modalContent.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
-    modalContent.querySelector('#addMemberToProject')?.addEventListener('click', () => this.showAddMemberToProject(projectId));
-    modalContent.querySelector('#addTaskToProject')?.addEventListener('click', () => this.showTaskModal(null, projectId));
+    
+    modalContent.querySelector('#projectStatusSelect').addEventListener('change', (e) => {
+      store.updateProject(projectId, { status: e.target.value });
+      overlay.remove();
+      this.showProjectDetail(projectId);
+    });
+    
+    modalContent.querySelector('#addMemberToProject')?.addEventListener('click', () => {
+      overlay.remove();
+      this.showAddMemberToProject(projectId);
+    });
+    
+    modalContent.querySelector('#addTaskToProject')?.addEventListener('click', () => {
+      overlay.remove();
+      this.showTaskModal(null, projectId);
+    });
+    
     modalContent.querySelector('#deleteProject')?.addEventListener('click', async () => {
       if (await Utils.confirm('确定要删除此项目吗？')) {
         store.deleteProject(projectId);
@@ -438,6 +472,62 @@ class ChipTodoApp {
         this.showTaskModal(item.dataset.id);
       });
     });
+  }
+
+  showTaskDetail(taskId) {
+    const task = store.data.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    
+    const project = store.data.projects.find(p => p.id === task.projectId);
+    const member = store.data.members.find(m => m.id === task.assignee);
+    const priorityLabels = { low: '低', medium: '中', high: '高' };
+    const priorityIcons = { 
+      low: Utils.icon('arrowDown'), 
+      medium: Utils.icon('minus'), 
+      high: Utils.icon('arrowUp') 
+    };
+    
+    const modalContent = Utils.createElement('div', { class: 'form-modal' });
+    modalContent.innerHTML = `
+      <h2>${Utils.icon('document')} 任务详情</h2>
+      <div class="task-detail-view">
+        <div class="detail-row">
+          <label>任务名称</label>
+          <span>${Utils.escapeHtml(task.name)}</span>
+        </div>
+        <div class="detail-row">
+          <label>所属项目</label>
+          <span>${project ? Utils.escapeHtml(project.name) : '未指定'}</span>
+        </div>
+        <div class="detail-row">
+          <label>负责人</label>
+          <span>${member ? Utils.escapeHtml(member.name) : '未分配'}</span>
+        </div>
+        <div class="detail-row">
+          <label>优先级</label>
+          <span>${priorityIcons[task.priority || 'medium']} ${priorityLabels[task.priority || 'medium']}</span>
+        </div>
+        <div class="detail-row">
+          <label>状态</label>
+          <span class="status-badge ${Utils.getStatusClass(task.status)}">${Utils.getStatusText(task.status)}</span>
+        </div>
+        <div class="detail-row">
+          <label>进度</label>
+          <span>${task.progress || 0}%</span>
+        </div>
+        <div class="detail-row">
+          <label>描述</label>
+          <span>${Utils.escapeHtml(task.description) || '暂无描述'}</span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary cancel-btn">关闭</button>
+      </div>
+    `;
+    
+    const overlay = Utils.showModal(modalContent);
+    
+    modalContent.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
   }
 
   renderTaskItem(task) {
@@ -458,6 +548,7 @@ class ChipTodoApp {
 
   showProjectModal(project = null) {
     const isEdit = !!project;
+    const currentStatus = project?.status || 'not_started';
     const modalContent = Utils.createElement('div', { class: 'form-modal' });
     modalContent.innerHTML = `
       <h2>${isEdit ? '编辑项目' : '新建项目'}</h2>
@@ -465,6 +556,14 @@ class ChipTodoApp {
         <div class="form-group">
           <label>项目名称（芯片型号）</label>
           <input type="text" name="name" required value="${project ? Utils.escapeHtml(project.name) : ''}" placeholder="例如: A1芯片测试">
+        </div>
+        <div class="form-group">
+          <label>状态</label>
+          <select name="status">
+            <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
+            <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
+            <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
+          </select>
         </div>
         <div class="form-group">
           <label>描述</label>
@@ -485,6 +584,7 @@ class ChipTodoApp {
       const formData = new FormData(e.target);
       const data = {
         name: formData.get('name'),
+        status: formData.get('status'),
         description: formData.get('description')
       };
       
@@ -641,6 +741,8 @@ class ChipTodoApp {
         description: formData.get('description')
       };
       
+      const taskProjectId = projectId || (task ? task.projectId : null);
+      
       if (isEdit) {
         store.updateTask(taskId, data);
       } else {
@@ -648,61 +750,12 @@ class ChipTodoApp {
       }
       
       overlay.remove();
-      this.render();
+      if (taskProjectId) {
+        this.showProjectDetail(taskProjectId);
+      } else {
+        this.render();
+      }
     });
-  }
-
-  renderMembers() {
-    const container = Utils.$('#membersView');
-    
-    container.innerHTML = `
-      <div class="members-page">
-        <div class="page-header">
-          <h2>👥 人员管理</h2>
-          <button class="btn btn-primary" id="newMemberBtn">+ 添加成员</button>
-        </div>
-        
-        ${store.data.members.length === 0 ? '<p class="empty">暂无成员</p>' : ''}
-        
-        <div class="member-cards">
-          ${store.data.members.map(m => this.renderMemberCard(m)).join('')}
-        </div>
-      </div>
-    `;
-    
-    Utils.$('#newMemberBtn')?.addEventListener('click', () => this.showMemberModal());
-    
-    Utils.$$('.member-card').forEach(card => {
-      card.querySelector('.edit-btn')?.addEventListener('click', () => {
-        const member = store.data.members.find(m => m.id === card.dataset.id);
-        this.showMemberModal(member);
-      });
-      card.querySelector('.delete-btn')?.addEventListener('click', async () => {
-        if (await Utils.confirm('确定要删除此成员吗？')) {
-          store.deleteMember(card.dataset.id);
-          this.render();
-        }
-      });
-    });
-  }
-
-  renderMemberCard(member) {
-    const weekTasks = store.getTasksByWeek(store.data.currentWeek, store.data.currentYear);
-    const memberTasks = weekTasks.filter(t => t.assignee === member.id);
-    const completed = memberTasks.filter(t => t.status === 'completed').length;
-    
-    return `
-      <div class="member-card" data-id="${member.id}">
-        <div class="member-avatar large" style="background:${member.color}">${member.name[0]}</div>
-        <h3>${Utils.escapeHtml(member.name)}</h3>
-        <span class="role-badge">${Utils.escapeHtml(member.role)}</span>
-        <p>本周任务: ${completed}/${memberTasks.length} 完成</p>
-        <div class="member-actions">
-          <button class="btn btn-secondary btn-sm edit-btn">编辑</button>
-          <button class="btn btn-danger btn-sm delete-btn">删除</button>
-        </div>
-      </div>
-    `;
   }
 
   showMemberModal(member = null) {
@@ -714,10 +767,6 @@ class ChipTodoApp {
         <div class="form-group">
           <label>姓名</label>
           <input type="text" name="name" required value="${member ? Utils.escapeHtml(member.name) : ''}" placeholder="成员姓名">
-        </div>
-        <div class="form-group">
-          <label>角色</label>
-          <input type="text" name="role" value="${member ? Utils.escapeHtml(member.role) : ''}" placeholder="例如: 测试工程师">
         </div>
         <div class="form-group">
           <label>颜色</label>
@@ -738,7 +787,6 @@ class ChipTodoApp {
       const formData = new FormData(e.target);
       const data = {
         name: formData.get('name'),
-        role: formData.get('role'),
         color: formData.get('color')
       };
       
@@ -755,21 +803,18 @@ class ChipTodoApp {
 
   renderMeeting() {
     const container = Utils.$('#meetingView');
-    // Use meeting state if set, otherwise use current week
     const week = this.meetingWeek || store.data.currentWeek;
     const year = this.meetingYear || store.data.currentYear;
     
-    // Store current meeting week/year for persistence
     this.meetingWeek = week;
     this.meetingYear = year;
     
     const meeting = store.getMeeting(week, year);
     const members = store.data.members;
     const tasksByAssignee = store.getTasksByAssignee(week, year);
-    
     const weekRange = Utils.getWeekRange(week, year);
+    const meetingsList = store.getMeetingsList();
     
-    // Build attendee checkboxes
     const attendeeCheckboxes = members.map(m => `
       <label class="attendee-checkbox">
         <input type="checkbox" value="${m.id}" ${meeting?.attendees?.includes(m.id) ? 'checked' : ''}>
@@ -778,23 +823,38 @@ class ChipTodoApp {
       </label>
     `).join('');
     
-    // Build tasks by assignee
     let tasksHtml = '';
     Object.entries(tasksByAssignee).forEach(([assigneeId, tasks]) => {
       const member = members.find(m => m.id === assigneeId);
       const memberName = member ? member.name : '未分配';
-      const memberRole = member ? member.role : '';
       const memberColor = member ? member.color : '#6B7280';
       
       const taskItems = tasks.map(task => {
         const project = store.data.projects.find(p => p.id === task.projectId);
         const projectName = project ? project.name : '未指定项目';
-        const statusText = Utils.getStatusText(task.status);
+        const taskReport = meeting?.taskReports?.[task.id] || {};
+        
         return `
-          <div class="meeting-task-item">
-            <span class="task-name">${Utils.escapeHtml(task.name)}</span>
-            <span class="task-project">${Utils.escapeHtml(projectName)}</span>
-            <span class="task-progress" style="color: ${this.getProgressColor(task.progress)}">${task.progress}%</span>
+          <div class="meeting-task-item" data-task-id="${task.id}">
+            <div class="task-item-header">
+              <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+              <span class="task-project">${Utils.escapeHtml(projectName)}</span>
+              <span class="task-progress" style="color: ${this.getProgressColor(task.progress)}">${task.progress}%</span>
+            </div>
+            <div class="task-report-fields">
+              <div class="report-field">
+                <label>${Utils.icon('check')} 本周工作</label>
+                <textarea class="task-work" placeholder="本周完成了什么工作...">${Utils.escapeHtml(taskReport.work || '')}</textarea>
+              </div>
+              <div class="report-field">
+                <label>${Utils.icon('alertCircle')} 遇到问题</label>
+                <textarea class="task-issues" placeholder="遇到什么困难或问题...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
+              </div>
+              <div class="report-field">
+                <label>${Utils.icon('target')} 下周计划</label>
+                <textarea class="task-plan" placeholder="下周计划做什么...">${Utils.escapeHtml(taskReport.plan || '')}</textarea>
+              </div>
+            </div>
           </div>
         `;
       }).join('');
@@ -804,7 +864,6 @@ class ChipTodoApp {
           <div class="meeting-member-header">
             <span class="member-avatar" style="background:${memberColor}">${memberName[0]}</span>
             <span class="member-name">${Utils.escapeHtml(memberName)}</span>
-            <span class="member-role">${Utils.escapeHtml(memberRole)}</span>
           </div>
           <div class="meeting-tasks">
             ${taskItems}
@@ -817,60 +876,91 @@ class ChipTodoApp {
       tasksHtml = '<p class="empty">本周暂无未完成任务</p>';
     }
     
+    const historyItems = meetingsList.slice(0, 10).map(m => `
+      <div class="history-item ${m.weekKey === store.getWeekKey(week, year) ? 'active' : ''}" data-week="${m.week}" data-year="${m.year}">
+        <span class="history-week">${m.year}年第${m.week}周</span>
+        <span class="history-date">${m.date}</span>
+      </div>
+    `).join('');
+    
     container.innerHTML = `
       <div class="meeting-page">
-        <div class="page-header">
-          <div class="week-nav">
-            <button class="btn btn-icon" id="prevMeetingWeek">◀</button>
-            <span class="current-week" id="meetingWeekDisplay">第${week}周 (${weekRange})</span>
-            <button class="btn btn-icon" id="nextMeetingWeek">▶</button>
-          </div>
-          <div class="meeting-actions">
-            <button class="btn btn-primary" id="saveMeetingBtn">💾 保存会议</button>
+        <div class="meeting-sidebar">
+          <h3>${Utils.icon('document')} 历史会议</h3>
+          <div class="meeting-history-list">
+            ${historyItems || '<p class="empty">暂无历史会议</p>'}
           </div>
         </div>
         
-        <div class="meeting-form">
-          <div class="form-group">
-            <label>会议日期</label>
-            <input type="date" id="meetingDate" value="${meeting?.date || new Date().toISOString().split('T')[0]}">
-          </div>
-          
-          <div class="form-group">
-            <label>参会人员</label>
-            <div class="attendees-list">
-              ${attendeeCheckboxes}
+        <div class="meeting-main">
+          <div class="page-header">
+            <div class="week-nav">
+              <button class="btn btn-icon" id="prevMeetingWeek">${Utils.icon('chevronLeft')}</button>
+              <span class="current-week" id="meetingWeekDisplay">第${week}周 (${weekRange})</span>
+              <button class="btn btn-icon" id="nextMeetingWeek">${Utils.icon('chevronRight')}</button>
+            </div>
+            <div class="meeting-actions">
+              <button class="btn btn-secondary" id="generateReportBtn">${Utils.icon('chart')} 生成报告</button>
+              <button class="btn btn-primary" id="saveMeetingBtn">${Utils.icon('check')} 保存会议</button>
             </div>
           </div>
           
-          <div class="form-group">
-            <label>会议备注</label>
-            <textarea id="meetingNotes" placeholder="会议讨论内容、决策事项等...">${meeting?.notes || ''}</textarea>
+          <div class="meeting-form">
+            <div class="form-group">
+              <label>会议日期</label>
+              <input type="date" id="meetingDate" value="${meeting?.date || new Date().toISOString().split('T')[0]}">
+            </div>
+            
+            <div class="form-group">
+              <label>参会人员</label>
+              <div class="attendees-list">
+                ${attendeeCheckboxes}
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label>会议备注</label>
+              <textarea id="meetingNotes" placeholder="会议讨论内容、决策事项等...">${meeting?.notes || ''}</textarea>
+            </div>
           </div>
-        </div>
-        
-        <div class="meeting-tasks-section">
-          <h3>📋 本周未完成任务 (${Object.values(tasksByAssignee).flat().length}项)</h3>
-          <p class="meeting-hint">以下任务状态为"待处理"或"进行中"，"暂停"和"已完成"的任务不显示</p>
-          <div class="meeting-tasks-list">
-            ${tasksHtml}
+          
+          <div class="meeting-tasks-section">
+            <h3>${Utils.icon('document')} 任务进展记录 (${Object.values(tasksByAssignee).flat().length}项)</h3>
+            <p class="meeting-hint">为每个任务记录：本周工作内容、遇到的问题、下周计划</p>
+            <div class="meeting-tasks-list">
+              ${tasksHtml}
+            </div>
           </div>
         </div>
       </div>
     `;
     
-    // Bind save event
     Utils.$('#saveMeetingBtn')?.addEventListener('click', () => {
       const date = Utils.$('#meetingDate').value;
       const notes = Utils.$('#meetingNotes').value;
       const attendees = Array.from(Utils.$$('#meetingView input[type="checkbox"]:checked')).map(cb => cb.value);
       
       store.saveMeeting(week, year, { date, notes, attendees });
+      
+      Utils.$$('.meeting-task-item').forEach(taskEl => {
+        const taskId = taskEl.dataset.taskId;
+        const work = taskEl.querySelector('.task-work')?.value || '';
+        const issues = taskEl.querySelector('.task-issues')?.value || '';
+        const plan = taskEl.querySelector('.task-plan')?.value || '';
+        
+        if (work || issues || plan) {
+          store.updateTaskReport(week, year, taskId, { work, issues, plan });
+        }
+      });
+      
       alert('会议记录已保存！');
       this.renderMeeting();
     });
     
-    // Bind week navigation
+    Utils.$('#generateReportBtn')?.addEventListener('click', () => {
+      this.showMeetingReport(week, year);
+    });
+    
     Utils.$('#prevMeetingWeek')?.addEventListener('click', () => {
       let w = this.meetingWeek;
       let y = this.meetingYear;
@@ -895,6 +985,114 @@ class ChipTodoApp {
       this.meetingWeek = w;
       this.meetingYear = y;
       this.renderMeeting();
+    });
+    
+    Utils.$$('.history-item').forEach(item => {
+      item.addEventListener('click', () => {
+        this.meetingWeek = parseInt(item.dataset.week);
+        this.meetingYear = parseInt(item.dataset.year);
+        this.renderMeeting();
+      });
+    });
+  }
+
+  showMeetingReport(week, year) {
+    const meeting = store.getMeeting(week, year);
+    const members = store.data.members;
+    const tasksByAssignee = store.getTasksByAssignee(week, year);
+    const weekRange = Utils.getWeekRange(week, year);
+    
+    if (!meeting) {
+      alert('请先保存会议记录');
+      return;
+    }
+    
+    const attendeeNames = meeting.attendees?.map(id => {
+      const m = members.find(m => m.id === id);
+      return m ? m.name : null;
+    }).filter(Boolean).join('、') || '无';
+    
+    let reportContent = `# 芯片测试组 周会报告\n`;
+    reportContent += `**${year}年第${week}周** (${weekRange})\n\n`;
+    
+    reportContent += `## 会议信息\n`;
+    reportContent += `- **日期**: ${meeting.date}\n`;
+    reportContent += `- **参会人员**: ${attendeeNames}\n\n`;
+    
+    reportContent += `## 成员任务进展\n\n`;
+    
+    Object.entries(tasksByAssignee).forEach(([assigneeId, tasks]) => {
+      const member = members.find(m => m.id === assigneeId);
+      const memberName = member ? member.name : '未分配';
+      
+      reportContent += `### ${memberName}\n`;
+      
+      tasks.forEach(task => {
+        const project = store.data.projects.find(p => p.id === task.projectId);
+        const projectName = project ? project.name : '未指定项目';
+        const taskReport = meeting.taskReports?.[task.id] || {};
+        
+        reportContent += `**${task.name}** (${projectName}) - 进度: ${task.progress}%\n`;
+        
+        if (taskReport.work) {
+          reportContent += `- 📝 本周工作: ${taskReport.work}\n`;
+        }
+        if (taskReport.issues) {
+          reportContent += `- ⚠️ 遇到问题: ${taskReport.issues}\n`;
+        }
+        if (taskReport.plan) {
+          reportContent += `- 🎯 下周计划: ${taskReport.plan}\n`;
+        }
+        reportContent += `\n`;
+      });
+    });
+    
+    const issuesList = [];
+    Object.values(meeting.taskReports || {}).forEach(report => {
+      if (report.issues) {
+        issuesList.push(report.issues);
+      }
+    });
+    
+    if (issuesList.length > 0) {
+      reportContent += `## 问题汇总\n\n`;
+      issuesList.forEach((issue, i) => {
+        reportContent += `${i + 1}. ${issue}\n`;
+      });
+      reportContent += `\n`;
+    }
+    
+    if (meeting.notes) {
+      reportContent += `## 会议决议\n\n${meeting.notes}\n`;
+    }
+    
+    const modalContent = Utils.createElement('div', { class: 'report-modal' });
+    modalContent.innerHTML = `
+      <div class="modal-header">
+        <h2>${Utils.icon('chart')} 会议报告</h2>
+        <button class="btn btn-icon close-btn">${Utils.icon('close')}</button>
+      </div>
+      <div class="report-preview">
+        <pre>${Utils.escapeHtml(reportContent)}</pre>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary cancel-btn">关闭</button>
+        <button type="button" class="btn btn-primary" id="copyReportBtn">${Utils.icon('copy')} 复制到剪贴板</button>
+      </div>
+    `;
+    
+    const overlay = Utils.showModal(modalContent);
+    
+    modalContent.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
+    modalContent.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
+    
+    modalContent.querySelector('#copyReportBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(reportContent);
+        alert('报告已复制到剪贴板！可粘贴到钉钉/企业微信/Word');
+      } catch (e) {
+        alert('复制失败，请手动复制');
+      }
     });
   }
 
