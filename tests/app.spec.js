@@ -1,9 +1,43 @@
 const { test, expect } = require('@playwright/test');
 
 test.describe('Chip Todo App', () => {
+  async function openManagement(page) {
+    await page.click('.tab[data-view="management"]');
+  }
+
+  async function createProject(page, name, status = 'not_started') {
+    await openManagement(page);
+    await page.click('#newProjectBtn');
+    await page.fill('input[name="name"]', name);
+    await page.selectOption('select[name="status"]', status);
+    await page.click('button[type="submit"]');
+  }
+
+  async function openProjectDetail(page, name) {
+    const card = page.locator('.project-card').filter({ hasText: name }).first();
+    await card.locator('.view-btn').click();
+    await expect(page.locator('.project-detail-modal h2')).toContainText(name);
+  }
+
+  async function addTaskFromProjectDetail(page, name, options = {}) {
+    await page.click('#addTaskToProject');
+    await page.fill('input[name="name"]', name);
+    if (options.projectName) {
+      await page.selectOption('select[name="projectId"]', { label: options.projectName });
+    }
+    if (options.status) {
+      await page.selectOption('select[name="status"]', options.status);
+    }
+    if (options.progress !== undefined) {
+      await page.locator('#progressSlider').fill(String(options.progress));
+    }
+    await page.click('#taskForm button[type="submit"]');
+  }
+
   test.beforeEach(async ({ page }) => {
     page.on('console', msg => console.log(`[Browser] ${msg.type()}: ${msg.text()}`));
     page.on('pageerror', error => console.log(`[Browser Error]: ${error}`));
+    page.on('dialog', dialog => dialog.accept());
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => localStorage.clear());
@@ -142,5 +176,63 @@ test.describe('Chip Todo App', () => {
   test('should display stats in footer', async ({ page }) => {
     await expect(page.locator('#stats')).toBeVisible();
     await expect(page.locator('#stats')).toContainText('任务完成');
+  });
+
+  test('should prevent completing a project with unfinished tasks', async ({ page }) => {
+    await createProject(page, 'Alpha Project');
+    await openProjectDetail(page, 'Alpha Project');
+    await addTaskFromProjectDetail(page, '未完成任务');
+
+    await page.selectOption('#projectStatusSelect', 'completed');
+
+    await expect(page.locator('#projectStatusSelect')).toHaveValue('not_started');
+    await expect(page.locator('#addTaskToProject')).toBeEnabled();
+  });
+
+  test('should return to the new project detail after moving a task', async ({ page }) => {
+    await createProject(page, 'Project A');
+    await createProject(page, 'Project B');
+
+    await openProjectDetail(page, 'Project A');
+    await addTaskFromProjectDetail(page, '迁移任务');
+
+    await page.locator('.task-item').filter({ hasText: '迁移任务' }).click();
+    await expect(page.locator('h2').filter({ hasText: '编辑任务' })).toBeVisible();
+    await page.selectOption('select[name="projectId"]', { label: 'Project B' });
+    await page.click('#taskForm button[type="submit"]');
+
+    await expect(page.locator('.project-detail-modal h2')).toContainText('Project B');
+    await expect(page.locator('.project-detail-modal .task-list')).toContainText('迁移任务');
+  });
+
+  test('should clear stored meeting reports when task notes are emptied', async ({ page }) => {
+    await createProject(page, 'Meeting Project');
+    await openProjectDetail(page, 'Meeting Project');
+    await addTaskFromProjectDetail(page, '会议任务');
+
+    await page.click('.project-detail-modal .close-btn');
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('.meeting-task-item .task-work', '本周完成验证');
+    await page.click('#saveMeetingBtn');
+
+    await page.fill('.meeting-task-item .task-work', '');
+    await page.click('#saveMeetingBtn');
+
+    const meetings = await page.evaluate(() => JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]'));
+    expect(meetings).toHaveLength(1);
+    expect(Object.keys(meetings[0].taskReports || {})).toHaveLength(0);
+  });
+
+  test('should filter completed tasks on the board', async ({ page }) => {
+    await createProject(page, 'Completed Project');
+    await openProjectDetail(page, 'Completed Project');
+    await addTaskFromProjectDetail(page, '完成任务', { status: 'completed' });
+
+    await page.click('.project-detail-modal .close-btn');
+    await page.click('.tab[data-view="board"]');
+    await page.click('.filter-tab[data-filter="completed"]');
+
+    await expect(page.locator('.gantt-task')).toContainText('完成任务');
+    await expect(page.locator('#projectList')).toContainText('Completed Project');
   });
 });

@@ -29,7 +29,12 @@ class DataStore {
     const current = this.getCurrentWeek();
 
     return {
-      members: Array.isArray(data.members) ? data.members : [],
+      members: Array.isArray(data.members)
+        ? data.members.map((member) => ({
+          ...member,
+          role: this.sanitizeName(member?.role) || '成员'
+        }))
+        : [],
       projects: Array.isArray(data.projects) ? data.projects : [],
       tasks: Array.isArray(data.tasks) ? data.tasks : [],
       currentWeek: Number.isInteger(data.currentWeek) ? data.currentWeek : current.week,
@@ -87,6 +92,7 @@ class DataStore {
     this.data.members.push({
       id,
       name,
+      role: this.sanitizeName(member.role) || '成员',
       color: member.color || this.generateColor(),
       createdAt: new Date().toISOString()
     });
@@ -102,6 +108,9 @@ class DataStore {
         const name = this.sanitizeName(nextUpdates.name);
         if (!name) return;
         nextUpdates.name = name;
+      }
+      if (nextUpdates.role !== undefined) {
+        nextUpdates.role = this.sanitizeName(nextUpdates.role) || '成员';
       }
       this.data.members[index] = { ...this.data.members[index], ...nextUpdates };
       this.save();
@@ -142,12 +151,20 @@ class DataStore {
       const nextUpdates = { ...updates };
       if (nextUpdates.name !== undefined) {
         const name = this.sanitizeName(nextUpdates.name);
-        if (!name) return;
+        if (!name) return false;
         nextUpdates.name = name;
+      }
+      if (
+        nextUpdates.status === 'completed' &&
+        this.hasIncompleteProjectTasks(id)
+      ) {
+        return false;
       }
       this.data.projects[index] = { ...this.data.projects[index], ...nextUpdates };
       this.save();
+      return true;
     }
+    return false;
   }
 
   deleteProject(id) {
@@ -158,10 +175,25 @@ class DataStore {
 
   addTask(task) {
     const name = this.sanitizeName(task.name);
-    if (!name || !task.projectId) return null;
+    const project = this.getProject(task.projectId);
+    if (!name || !project) return null;
+    if (project.status === 'completed') return null;
 
     const id = this.generateId('t');
-    const progress = task.progress !== undefined ? Math.min(100, Math.max(0, parseInt(task.progress, 10) || 0)) : 0;
+    const status = task.status || 'pending';
+    let progress = task.progress !== undefined
+      ? Math.min(100, Math.max(0, parseInt(task.progress, 10) || 0))
+      : 0;
+
+    if (status === 'completed') {
+      progress = 100;
+    } else if (status === 'pending') {
+      progress = 0;
+    } else if ((status === 'in_progress' || status === 'paused') && progress <= 0) {
+      progress = 1;
+    } else if ((status === 'in_progress' || status === 'paused') && progress >= 100) {
+      progress = 99;
+    }
 
     this.data.tasks.push({
       id,
@@ -169,7 +201,7 @@ class DataStore {
       name,
       description: task.description || '',
       assignee: task.assignee || null,
-      status: task.status || 'pending',
+      status,
       priority: task.priority || 'medium',
       progress,
       weekKey: this.getWeekKey(this.data.currentWeek, this.data.currentYear),
@@ -182,19 +214,51 @@ class DataStore {
 
   updateTask(id, updates) {
     const index = this.data.tasks.findIndex(t => t.id === id);
-    if (index === -1) return;
+    if (index === -1) return false;
 
     const task = this.data.tasks[index];
     const nextUpdates = { ...updates };
+    const currentProject = this.getProject(task.projectId);
 
     if (nextUpdates.name !== undefined) {
       const name = this.sanitizeName(nextUpdates.name);
-      if (!name) return;
+      if (!name) return false;
       nextUpdates.name = name;
     }
 
     if (nextUpdates.progress !== undefined) {
       nextUpdates.progress = Math.min(100, Math.max(0, parseInt(nextUpdates.progress, 10) || 0));
+    }
+
+    const targetProjectId = nextUpdates.projectId !== undefined
+      ? nextUpdates.projectId
+      : task.projectId;
+    const targetProject = this.getProject(targetProjectId);
+    if (!targetProject) return false;
+
+    if (
+      targetProject.status === 'completed' &&
+      targetProjectId !== task.projectId
+    ) {
+      return false;
+    }
+
+    if (currentProject?.status === 'completed') {
+      if (targetProjectId !== task.projectId) {
+        return false;
+      }
+      if (
+        nextUpdates.status !== undefined &&
+        nextUpdates.status !== 'completed'
+      ) {
+        return false;
+      }
+      if (
+        nextUpdates.progress !== undefined &&
+        nextUpdates.progress < 100
+      ) {
+        return false;
+      }
     }
 
     if (nextUpdates.status !== undefined && nextUpdates.status !== task.status) {
@@ -246,6 +310,7 @@ class DataStore {
 
     this.data.tasks[index] = { ...task, ...nextUpdates };
     this.save();
+    return true;
   }
 
   deleteTask(id) {
@@ -266,10 +331,24 @@ class DataStore {
     return this.data.tasks.filter(t => t.assignee === memberId);
   }
 
+  getProject(projectId) {
+    return this.data.projects.find(project => project.id === projectId) || null;
+  }
+
+  hasIncompleteProjectTasks(projectId) {
+    return this.data.tasks.some(task => (
+      task.projectId === projectId &&
+      task.status !== 'completed'
+    ));
+  }
+
   getProjectMembers(projectId) {
-    const project = this.data.projects.find(p => p.id === projectId);
-    if (!project) return [];
-    return this.data.members.filter(m => project.members.includes(m.id));
+    const assigneeIds = new Set(
+      this.data.tasks
+        .filter((task) => task.projectId === projectId && task.assignee)
+        .map((task) => task.assignee)
+    );
+    return this.data.members.filter((member) => assigneeIds.has(member.id));
   }
 
   loadHistory() {
@@ -425,7 +504,7 @@ class DataStore {
       date: data.date || new Date().toISOString().split('T')[0],
       attendees: data.attendees || [],
       notes: data.notes || '',
-      taskReports: existingMeeting?.taskReports || {},
+      taskReports: this.clone(existingMeeting?.taskReports || {}),
       createdAt: existingMeeting?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -447,12 +526,22 @@ class DataStore {
 
     if (existingIndex >= 0) {
       const taskReports = meetings[existingIndex].taskReports || {};
-      taskReports[taskId] = {
+      const normalizedReport = {
         work: report.work || '',
         issues: report.issues || '',
-        plan: report.plan || '',
-        updatedAt: new Date().toISOString()
+        plan: report.plan || ''
       };
+      const hasContent = Object.values(normalizedReport).some(Boolean);
+
+      if (hasContent) {
+        taskReports[taskId] = {
+          ...normalizedReport,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        delete taskReports[taskId];
+      }
+
       meetings[existingIndex].taskReports = taskReports;
       meetings[existingIndex].updatedAt = new Date().toISOString();
       this.saveMeetings(meetings);

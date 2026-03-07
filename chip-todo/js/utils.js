@@ -154,7 +154,7 @@ const Utils = {
   getStatusClass(status) {
     const map = {
       'pending': 'status-pending',
-      'in_progress': 'status-in-progress',
+      'in_progress': 'status-in_progress',
       'paused': 'status-paused',
       'completed': 'status-completed'
     };

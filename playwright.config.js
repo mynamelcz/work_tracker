@@ -9,7 +9,7 @@ module.exports = defineConfig({
     baseURL: 'http://localhost:5500',
   },
   webServer: {
-    command: 'npx serve -l 5500 chip-todo',
+    command: 'python3 -m http.server 5500 -d chip-todo',
     port: 5500,
     reuseExistingServer: true,
   },

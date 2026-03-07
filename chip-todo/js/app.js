@@ -5,7 +5,7 @@ class ChipTodoApp {
     this.currentMember = null;
     this.meetingWeek = null;
     this.meetingYear = null;
-    this.boardFilter = 'all'; // all, not_started, in_progress, paused
+    this.boardFilter = 'all'; // all, not_started, in_progress, paused, completed
     this.init();
   }
 
@@ -58,15 +58,19 @@ class ChipTodoApp {
   }
 
   bindEvents() {
-    Utils.$('#app').addEventListener('click', (e) => {
+    const appRoot = Utils.$('#app');
+
+    appRoot.addEventListener('click', (e) => {
       const tab = e.target.closest('.tab');
       if (tab) {
         this.switchView(tab.dataset.view);
+        return;
       }
       
       const exportBtn = e.target.closest('#exportBtn');
       if (exportBtn) {
         this.exportData();
+        return;
       }
       
       const importBtn = e.target.closest('#importBtn');
@@ -74,9 +78,12 @@ class ChipTodoApp {
         Utils.$('#importFile').click();
       }
     });
-    
-    Utils.$('#importFile').addEventListener('change', (e) => {
-      this.importData(e.target.files[0]);
+
+    appRoot.addEventListener('change', (e) => {
+      if (e.target.matches('#importFile')) {
+        this.importData(e.target.files[0]);
+        e.target.value = '';
+      }
     });
   }
 
@@ -105,29 +112,65 @@ class ChipTodoApp {
   renderBoard() {
     const container = Utils.$('#boardView');
     const members = store.data.members;
-    
-    // Get filtered projects based on boardFilter
-    const { tasks, projects } = this.getFilteredData(this.boardFilter);
+    const { tasks, projects, selectedProject, totalTasks } = this.getFilteredData(this.boardFilter);
+    const projectTaskStats = this.getProjectTaskStats(this.getTasksByStatusFilter(this.boardFilter));
+    const filterLabels = {
+      all: '全部任务',
+      not_started: '未开始',
+      in_progress: '进行中',
+      paused: '已暂停',
+      completed: '已完成'
+    };
+
     container.innerHTML = `
       <div class="board">
         <div class="sidebar">
+          <div class="board-summary">
+            <div class="summary-card">
+              <span class="summary-label">当前范围</span>
+              <strong>${filterLabels[this.boardFilter]}</strong>
+            </div>
+            <div class="summary-card">
+              <span class="summary-label">可见任务</span>
+              <strong>${totalTasks}</strong>
+            </div>
+          </div>
           <h3>项目列表</h3>
           <div class="project-list" id="projectList">
-            ${projects.map(p => this.renderProjectItem(p)).join('')}
+            <div class="project-item ${this.currentProject ? '' : 'active'}" data-id="">
+              <div class="project-item-header">
+                <div class="project-name">全部项目</div>
+              </div>
+              <div class="project-meta">${totalTasks} 项任务</div>
+            </div>
+            ${projects.map(p => this.renderProjectItem(p, projectTaskStats[p.id])).join('')}
           </div>
         </div>
         
         <div class="board-content">
           <div class="board-header">
-            <h3>任务甘特图</h3>
+            <div>
+              <h3>任务甘特图</h3>
+              <p class="board-subtitle">
+                ${selectedProject
+                  ? `当前项目：${Utils.escapeHtml(selectedProject.name)}`
+                  : '按任务状态和项目查看当前工作负载'}
+              </p>
+            </div>
             <div class="filter-tabs">
               <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">全部</button>
               <button class="filter-tab ${this.boardFilter === 'not_started' ? 'active' : ''}" data-filter="not_started">未开始</button>
               <button class="filter-tab ${this.boardFilter === 'in_progress' ? 'active' : ''}" data-filter="in_progress">进行中</button>
               <button class="filter-tab ${this.boardFilter === 'paused' ? 'active' : ''}" data-filter="paused">暂停</button>
+              <button class="filter-tab ${this.boardFilter === 'completed' ? 'active' : ''}" data-filter="completed">已完成</button>
             </div>
           </div>
-          ${tasks.length === 0 ? '<p class="empty">暂无任务</p>' : this.renderGantt(tasks, members, projects)}
+          ${tasks.length === 0
+            ? `<div class="empty empty-panel">
+                <strong>当前筛选下没有任务</strong>
+                <span>切换状态筛选，或到“管理”页补充项目与任务。</span>
+              </div>`
+            : this.renderGantt(tasks, members, projects)}
         </div>
       </div>
     `;
@@ -137,18 +180,57 @@ class ChipTodoApp {
   }
 
   getFilteredData(filter) {
-    let filteredProjects;
-    
-    if (filter === 'all') {
-      filteredProjects = store.data.projects;
-    } else {
-      filteredProjects = store.data.projects.filter(p => p.status === filter);
+    const tasks = this.getTasksByStatusFilter(filter);
+
+    const projectIds = new Set(tasks.map((task) => task.projectId));
+    const projects = store.data.projects.filter((project) => projectIds.has(project.id));
+
+    if (this.currentProject && !projectIds.has(this.currentProject)) {
+      this.currentProject = null;
     }
-    
-    const projectIds = new Set(filteredProjects.map(p => p.id));
-    const tasks = store.data.tasks.filter(t => projectIds.has(t.projectId));
-    
-    return { tasks, projects: filteredProjects };
+
+    const visibleTasks = this.currentProject
+      ? tasks.filter((task) => task.projectId === this.currentProject)
+      : tasks;
+
+    return {
+      tasks: visibleTasks,
+      projects,
+      totalTasks: tasks.length,
+      selectedProject: this.currentProject
+        ? store.data.projects.find((project) => project.id === this.currentProject) || null
+        : null
+    };
+  }
+
+  getTasksByStatusFilter(filter) {
+    if (filter === 'not_started') {
+      return store.data.tasks.filter((task) => task.status === 'pending');
+    }
+    if (filter === 'in_progress') {
+      return store.data.tasks.filter((task) => task.status === 'in_progress');
+    }
+    if (filter === 'paused') {
+      return store.data.tasks.filter((task) => task.status === 'paused');
+    }
+    if (filter === 'completed') {
+      return store.data.tasks.filter((task) => task.status === 'completed');
+    }
+    return [...store.data.tasks];
+  }
+
+  getProjectTaskStats(tasks) {
+    return tasks.reduce((stats, task) => {
+      if (!stats[task.projectId]) {
+        stats[task.projectId] = { total: 0, completed: 0 };
+      }
+
+      stats[task.projectId].total += 1;
+      if (task.status === 'completed') {
+        stats[task.projectId].completed += 1;
+      }
+      return stats;
+    }, {});
   }
 
   getWeekStartDate(year, week) {
@@ -172,13 +254,20 @@ class ChipTodoApp {
     });
   }
 
-  renderProjectItem(project) {
-    const projectTasks = store.getTasksByProject(project.id);
-    const taskCount = projectTasks.length;
-    const completedCount = projectTasks.filter(t => t.status === 'completed').length;
+  renderProjectItem(project, stats = { total: 0, completed: 0 }) {
     const isActive = this.currentProject === project.id ? 'active' : '';
-    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
-    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
+    const statusLabels = {
+      not_started: '未开始',
+      in_progress: '进行中',
+      paused: '暂停',
+      completed: '已结项'
+    };
+    const statusClass = {
+      not_started: 'status-pending',
+      in_progress: 'status-in_progress',
+      paused: 'status-paused',
+      completed: 'status-completed'
+    };
     const projectStatus = project.status || 'not_started';
     
     return `
@@ -187,7 +276,7 @@ class ChipTodoApp {
           <div class="project-name">${Utils.escapeHtml(project.name)}</div>
           <span class="project-status-dot ${statusClass[projectStatus]}" title="${statusLabels[projectStatus]}"></span>
         </div>
-        <div class="project-meta">${completedCount}/${taskCount} 任务</div>
+        <div class="project-meta">${stats.completed}/${stats.total} 任务</div>
       </div>
     `;
   }
@@ -262,9 +351,14 @@ class ChipTodoApp {
   bindBoardEvents() {
     Utils.$$('.project-item').forEach(item => {
       item.addEventListener('click', () => {
-        this.currentProject = item.dataset.id;
+        this.currentProject = item.dataset.id || null;
         this.renderBoard();
-        this.showProjectDetail(item.dataset.id);
+      });
+    });
+
+    Utils.$$('.gantt-task').forEach((taskEl) => {
+      taskEl.addEventListener('click', () => {
+        this.showTaskModal(taskEl.dataset.id);
       });
     });
   }
@@ -348,6 +442,7 @@ class ChipTodoApp {
       <div class="member-card" data-id="${member.id}">
         <div class="member-avatar large" style="background:${member.color}">${member.name[0]}</div>
         <h3>${Utils.escapeHtml(member.name)}</h3>
+        <span class="role-badge">${Utils.escapeHtml(member.role || '成员')}</span>
         <p>本周任务: ${completed}/${memberTasks.length} 完成</p>
         <div class="member-actions">
           <button class="btn btn-secondary btn-sm edit-btn">编辑</button>
@@ -361,8 +456,18 @@ class ChipTodoApp {
     const tasks = store.getTasksByProject(project.id);
     const members = store.getProjectMembers(project.id);
     const completed = tasks.filter(t => t.status === 'completed').length;
-    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
-    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
+    const statusLabels = {
+      not_started: '未开始',
+      in_progress: '进行中',
+      paused: '暂停',
+      completed: '已结项'
+    };
+    const statusClass = {
+      not_started: 'status-pending',
+      in_progress: 'status-in_progress',
+      paused: 'status-paused',
+      completed: 'status-completed'
+    };
     const projectStatus = project.status || 'not_started';
     
     return `
@@ -374,7 +479,7 @@ class ChipTodoApp {
         <p>${Utils.escapeHtml(project.description) || '暂无描述'}</p>
         <div class="project-card-meta">
           <span>${Utils.icon('document')} ${completed}/${tasks.length} 任务</span>
-          <span>${Utils.icon('user')} ${members.length} 人</span>
+          <span>${Utils.icon('user')} ${members.length} 位负责人</span>
         </div>
         <div class="project-members">
           ${members.map(m => `<span class="member-chip" style="background:${m.color}">${m.name[0]}</span>`).join('')}
@@ -385,14 +490,26 @@ class ChipTodoApp {
   }
 
   showProjectDetail(projectId) {
-    const project = store.data.projects.find(p => p.id === projectId);
+    const project = store.getProject(projectId);
     if (!project) return;
     
     const tasks = store.getTasksByProject(projectId);
     const members = store.getProjectMembers(projectId);
-    const statusLabels = { not_started: '未开始', in_progress: '进行中', paused: '暂停' };
-    const statusClass = { not_started: 'status-pending', in_progress: 'status-in_progress', paused: 'status-paused' };
-    const currentStatus = project.status || 'not_started';
+    const statusLabels = {
+      not_started: '未开始',
+      in_progress: '进行中',
+      paused: '暂停',
+      completed: '已结项'
+    };
+    const statusClass = {
+      not_started: 'status-pending',
+      in_progress: 'status-in_progress',
+      paused: 'status-paused',
+      completed: 'status-completed'
+    };
+    let currentStatus = project.status || 'not_started';
+    const isCompletedProject = currentStatus === 'completed';
+    const canAddTasks = !isCompletedProject;
     
     const modalContent = Utils.createElement('div', { class: 'project-detail-modal' });
     modalContent.innerHTML = `
@@ -408,26 +525,32 @@ class ChipTodoApp {
           <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
           <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
           <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
+          <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>已结项</option>
         </select>
       </div>
       
       <div class="project-detail-section">
         <h3>${Utils.icon('user')} 参与人员</h3>
+        <p class="section-hint">根据当前项目任务的负责人自动汇总，无需单独维护。</p>
         <div class="member-list">
-          ${members.length === 0 ? '<p>暂无成员</p>' : members.map(m => `
+          ${members.length === 0 ? '<p class="empty-inline">暂无负责人，给项目任务分配成员后会自动显示。</p>' : members.map(m => `
             <div class="member-item">
               <span class="member-avatar" style="background:${m.color}">${m.name[0]}</span>
               <span>${Utils.escapeHtml(m.name)}</span>
-              <span class="role">${Utils.escapeHtml(m.role)}</span>
+              <span class="role">${Utils.escapeHtml(m.role || '成员')}</span>
             </div>
           `).join('')}
         </div>
-        <button class="btn btn-secondary btn-sm" id="addMemberToProject">+ 添加成员</button>
       </div>
       
       <div class="project-detail-section">
         <h3>${Utils.icon('document')} 任务列表</h3>
-        <button class="btn btn-primary btn-sm" id="addTaskToProject">+ 添加任务</button>
+        <button class="btn btn-primary btn-sm" id="addTaskToProject" ${canAddTasks ? '' : 'disabled'}>
+          ${canAddTasks ? '+ 添加任务' : '已结项项目不可新增任务'}
+        </button>
+        <p class="section-hint" id="projectTaskHint" style="${canAddTasks ? 'display:none;' : ''}">
+          如需补充任务，请先将项目状态调整为未开始、进行中或暂停。
+        </p>
         <div class="task-list">
           ${tasks.length === 0 ? '<p>暂无任务</p>' : tasks.map(t => this.renderTaskItem(t)).join('')}
         </div>
@@ -439,18 +562,31 @@ class ChipTodoApp {
     `;
     
     const overlay = Utils.showModal(modalContent);
+    const addTaskButton = modalContent.querySelector('#addTaskToProject');
+    const projectTaskHint = modalContent.querySelector('#projectTaskHint');
+
+    const syncTaskControls = (status) => {
+      const canCreateTask = status !== 'completed';
+      addTaskButton.disabled = !canCreateTask;
+      addTaskButton.textContent = canCreateTask
+        ? '+ 添加任务'
+        : '已结项项目不可新增任务';
+      projectTaskHint.style.display = canCreateTask ? 'none' : 'block';
+    };
     
     modalContent.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
     
     modalContent.querySelector('#projectStatusSelect').addEventListener('change', (e) => {
-      store.updateProject(projectId, { status: e.target.value });
-      overlay.remove();
-      this.showProjectDetail(projectId);
-    });
-    
-    modalContent.querySelector('#addMemberToProject')?.addEventListener('click', () => {
-      overlay.remove();
-      this.showAddMemberToProject(projectId);
+      const nextStatus = e.target.value;
+      const success = store.updateProject(projectId, { status: nextStatus });
+      if (!success) {
+        alert('项目还有未完成任务，不能直接结项。');
+        e.target.value = currentStatus;
+        return;
+      }
+      currentStatus = nextStatus;
+      syncTaskControls(currentStatus);
+      this.render();
     });
     
     modalContent.querySelector('#addTaskToProject')?.addEventListener('click', () => {
@@ -469,7 +605,7 @@ class ChipTodoApp {
     modalContent.querySelectorAll('.task-item').forEach(item => {
       item.addEventListener('click', () => {
         overlay.remove();
-        this.showTaskModal(item.dataset.id);
+        this.showTaskModal(item.dataset.id, projectId);
       });
     });
   }
@@ -563,6 +699,7 @@ class ChipTodoApp {
             <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
             <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
             <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
+            <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>已结项</option>
           </select>
         </div>
         <div class="form-group">
@@ -582,16 +719,27 @@ class ChipTodoApp {
     modalContent.querySelector('#projectForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
+      const name = String(formData.get('name') || '').trim();
+      if (!name) {
+        alert('请输入项目名称');
+        return;
+      }
       const data = {
-        name: formData.get('name'),
+        name,
         status: formData.get('status'),
-        description: formData.get('description')
+        description: String(formData.get('description') || '').trim()
       };
-      
+
+      let success = true;
       if (isEdit) {
-        store.updateProject(project.id, data);
+        success = store.updateProject(project.id, data);
       } else {
-        store.addProject(data);
+        success = !!store.addProject(data);
+      }
+
+      if (!success) {
+        alert('项目还有未完成任务，不能直接结项。');
+        return;
       }
       
       overlay.remove();
@@ -599,45 +747,20 @@ class ChipTodoApp {
     });
   }
 
-  showAddMemberToProject(projectId) {
-    const allMembers = store.data.members;
-    const project = store.data.projects.find(p => p.id === projectId);
-    const currentMembers = project ? project.members : [];
-    
-    const modalContent = Utils.createElement('div', { class: 'form-modal' });
-    modalContent.innerHTML = `
-      <h2>添加成员到项目</h2>
-      <div class="member-select-list">
-        ${allMembers.map(m => `
-          <label class="member-select-item">
-            <input type="checkbox" value="${m.id}" ${currentMembers.includes(m.id) ? 'checked' : ''}>
-            <span class="member-avatar" style="background:${m.color}">${m.name[0]}</span>
-            <span>${Utils.escapeHtml(m.name)}</span>
-            <span class="role">${Utils.escapeHtml(m.role)}</span>
-          </label>
-        `).join('')}
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn-secondary cancel-btn">取消</button>
-        <button type="button" class="btn btn-primary confirm-btn">确认</button>
-      </div>
-    `;
-    
-    const overlay = Utils.showModal(modalContent);
-    
-    modalContent.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
-    modalContent.querySelector('.confirm-btn').addEventListener('click', () => {
-      const selected = Array.from(modalContent.querySelectorAll('input:checked')).map(i => i.value);
-      store.updateProject(projectId, { members: selected });
-      overlay.remove();
-      this.showProjectDetail(projectId);
-    });
-  }
-
   showTaskModal(taskId = null, projectId = null) {
     const task = taskId ? store.data.tasks.find(t => t.id === taskId) : null;
     const isEdit = !!task;
-    const weekProjects = store.data.projects.filter(p => p.weekKey === store.getWeekKey(store.data.currentWeek, store.data.currentYear));
+    const currentWeekKey = store.getWeekKey(store.data.currentWeek, store.data.currentYear);
+    const selectedProjectId = projectId || task?.projectId || '';
+    const weekProjects = store.data.projects.filter(p => (
+      p.weekKey === currentWeekKey || p.id === selectedProjectId
+    ));
+    const availableProjects = weekProjects.filter((project) => (
+      project.status !== 'completed' || project.id === selectedProjectId
+    ));
+    const selectedProject = store.getProject(selectedProjectId);
+    const isLockedCompletedProject = isEdit && selectedProject?.status === 'completed';
+    const hasProjectOptions = availableProjects.length > 0;
     const members = store.data.members;
     const currentProgress = task?.progress || 0;
     const progressColor = this.getProgressColor(currentProgress);
@@ -646,18 +769,21 @@ class ChipTodoApp {
     modalContent.innerHTML = `
       <h2>${isEdit ? '编辑任务' : '新建任务'}</h2>
       <form id="taskForm">
+        ${isLockedCompletedProject
+          ? '<p class="section-hint">当前项目已结项，只允许修改说明性信息，不能再调整所属项目、进度或状态。</p>'
+          : ''}
         <div class="form-group">
           <label>任务名称</label>
           <input type="text" name="name" required value="${task ? Utils.escapeHtml(task.name) : ''}" placeholder="任务描述">
         </div>
         <div class="form-group">
           <label>所属项目</label>
-          <select name="projectId" required>
-            ${weekProjects.map(p => `
+          <select name="projectId" required ${!hasProjectOptions || isLockedCompletedProject ? 'disabled' : ''}>
+            ${hasProjectOptions ? availableProjects.map(p => `
               <option value="${p.id}" ${(projectId || task?.projectId) === p.id ? 'selected' : ''}>
                 ${Utils.escapeHtml(p.name)}
               </option>
-            `).join('')}
+            `).join('') : '<option value="">当前周没有可用项目</option>'}
           </select>
         </div>
         <div class="form-group">
@@ -674,7 +800,7 @@ class ChipTodoApp {
         <div class="form-group">
           <label>进度: <span id="progressValue" style="color: ${progressColor}">${currentProgress}%</span></label>
           <div class="progress-slider-container">
-            <input type="range" name="progress" min="0" max="100" value="${currentProgress}" class="progress-slider" id="progressSlider">
+            <input type="range" name="progress" min="0" max="100" value="${currentProgress}" class="progress-slider" id="progressSlider" ${isLockedCompletedProject ? 'disabled' : ''}>
           </div>
         </div>
         <div class="form-group">
@@ -687,7 +813,7 @@ class ChipTodoApp {
         </div>
         <div class="form-group">
           <label>状态</label>
-          <select name="status">
+          <select name="status" ${isLockedCompletedProject ? 'disabled' : ''}>
             <option value="pending" ${!task || task.status === 'pending' ? 'selected' : ''}>待处理</option>
             <option value="in_progress" ${task?.status === 'in_progress' ? 'selected' : ''}>进行中</option>
             <option value="paused" ${task?.status === 'paused' ? 'selected' : ''}>暂停</option>
@@ -701,7 +827,7 @@ class ChipTodoApp {
         <div class="form-actions">
           ${isEdit ? '<button type="button" class="btn btn-danger delete-btn">删除</button>' : ''}
           <button type="button" class="btn btn-secondary cancel-btn">取消</button>
-          <button type="submit" class="btn btn-primary">${isEdit ? '保存' : '创建'}</button>
+          <button type="submit" class="btn btn-primary" ${!hasProjectOptions && !isEdit ? 'disabled' : ''}>${isEdit ? '保存' : '创建'}</button>
         </div>
       </form>
     `;
@@ -731,27 +857,47 @@ class ChipTodoApp {
     modalContent.querySelector('#taskForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
+      const name = String(formData.get('name') || '').trim();
+      const submittedProjectId = isLockedCompletedProject
+        ? task.projectId
+        : formData.get('projectId');
       const data = {
-        name: formData.get('name'),
-        projectId: formData.get('projectId'),
+        name,
+        projectId: submittedProjectId,
         assignee: formData.get('assignee') || null,
         priority: formData.get('priority'),
-        status: formData.get('status'),
-        progress: parseInt(formData.get('progress')) || 0,
-        description: formData.get('description')
+        status: isLockedCompletedProject ? task.status : formData.get('status'),
+        progress: isLockedCompletedProject
+          ? task.progress
+          : parseInt(formData.get('progress'), 10) || 0,
+        description: String(formData.get('description') || '').trim()
       };
-      
-      const taskProjectId = projectId || (task ? task.projectId : null);
-      
+
+      if (!name) {
+        alert('请输入任务名称');
+        return;
+      }
+
+      if (!data.projectId) {
+        alert('请选择所属项目');
+        return;
+      }
+
+      let success = false;
       if (isEdit) {
-        store.updateTask(taskId, data);
+        success = store.updateTask(taskId, data);
       } else {
-        store.addTask(data);
+        success = !!store.addTask(data);
+      }
+
+      if (!success) {
+        alert('已结项项目不能新增任务或接收未结项任务。');
+        return;
       }
       
       overlay.remove();
-      if (taskProjectId) {
-        this.showProjectDetail(taskProjectId);
+      if (projectId) {
+        this.showProjectDetail(data.projectId);
       } else {
         this.render();
       }
@@ -767,6 +913,10 @@ class ChipTodoApp {
         <div class="form-group">
           <label>姓名</label>
           <input type="text" name="name" required value="${member ? Utils.escapeHtml(member.name) : ''}" placeholder="成员姓名">
+        </div>
+        <div class="form-group">
+          <label>角色</label>
+          <input type="text" name="role" value="${member ? Utils.escapeHtml(member.role || '成员') : '成员'}" placeholder="例如：测试工程师">
         </div>
         <div class="form-group">
           <label>颜色</label>
@@ -785,8 +935,14 @@ class ChipTodoApp {
     modalContent.querySelector('#memberForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const formData = new FormData(e.target);
+      const name = String(formData.get('name') || '').trim();
+      if (!name) {
+        alert('请输入成员姓名');
+        return;
+      }
       const data = {
-        name: formData.get('name'),
+        name,
+        role: String(formData.get('role') || '').trim() || '成员',
         color: formData.get('color')
       };
       
@@ -947,10 +1103,8 @@ class ChipTodoApp {
         const work = taskEl.querySelector('.task-work')?.value || '';
         const issues = taskEl.querySelector('.task-issues')?.value || '';
         const plan = taskEl.querySelector('.task-plan')?.value || '';
-        
-        if (work || issues || plan) {
-          store.updateTaskReport(week, year, taskId, { work, issues, plan });
-        }
+
+        store.updateTaskReport(week, year, taskId, { work, issues, plan });
       });
       
       alert('会议记录已保存！');

@@ -29,8 +29,6 @@
   --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
-
 * {
   box-sizing: border-box;
   margin: 0;
@@ -38,11 +36,15 @@
 }
 
 body {
-  font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--gray-50);
+  font-family: 'Avenir Next', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.08), transparent 20%),
+    linear-gradient(180deg, #f8fbff 0%, #f4f8fc 55%, #eef4fb 100%);
   color: var(--gray-800);
   min-height: 100vh;
   line-height: 1.5;
+  background-attachment: fixed;
 }
 
 .header {
@@ -59,7 +61,7 @@ body {
 }
 
 .header h1 {
-  font-family: 'Fira Code', monospace;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 18px;
   font-weight: 600;
   color: var(--gray-900);
@@ -156,6 +158,7 @@ body {
   padding: 16px;
   box-shadow: var(--shadow);
   overflow-y: auto;
+  border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .sidebar h3 {
@@ -165,6 +168,35 @@ body {
   margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.board-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.summary-card {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.88));
+  border: 1px solid rgba(191, 219, 254, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.summary-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gray-500);
+}
+
+.summary-card strong {
+  font-size: 20px;
+  color: var(--gray-900);
 }
 
 .project-list {
@@ -223,6 +255,10 @@ body {
   background: var(--warning);
 }
 
+.project-status-dot.status-completed {
+  background: var(--success);
+}
+
 .project-name {
   font-weight: 500;
   margin-bottom: 4px;
@@ -239,6 +275,7 @@ body {
   padding: 16px;
   box-shadow: var(--shadow);
   overflow-y: auto;
+  border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .board-content h3 {
@@ -257,6 +294,12 @@ body {
 
 .board-header h3 {
   margin-bottom: 0;
+}
+
+.board-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--gray-500);
 }
 
 .filter-tabs {
@@ -427,12 +470,45 @@ body {
   font-size: 20px;
 }
 
+.page-header h2,
+.meeting-sidebar h3,
+.meeting-tasks-section h3,
+.report-field label,
+.project-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-header h2 svg,
+.meeting-sidebar h3 svg,
+.meeting-tasks-section h3 svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.report-field label svg,
+.project-card-meta span svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--gray-500);
+}
+
 .management-page {
   padding: 20px;
 }
 
 .management-section {
   margin-bottom: 40px;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
 
 .management-section:last-child {
@@ -496,6 +572,11 @@ body {
 .project-status-badge.status-paused {
   background: var(--warning-bg);
   color: #B45309;
+}
+
+.project-status-badge.status-completed {
+  background: var(--success-bg);
+  color: #047857;
 }
 
 .project-card h3 {
@@ -604,9 +685,30 @@ body {
 }
 
 .project-detail-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 12px;
   font-size: 14px;
   color: var(--gray-600);
+}
+
+.project-detail-section h3 svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.section-hint {
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.empty-inline {
+  font-size: 13px;
+  color: var(--gray-500);
 }
 
 .project-status-select {
@@ -1087,6 +1189,13 @@ body {
   outline-offset: 2px;
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 .btn-primary {
   background: var(--primary);
   color: white;
@@ -1183,6 +1292,7 @@ body {
   overflow-y: auto;
   box-shadow: var(--shadow-xl);
   animation: slideUp 0.25s ease;
+  border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .modal h2 {
@@ -1290,6 +1400,28 @@ body {
   padding: 40px;
 }
 
+.empty-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  border: 1px dashed var(--gray-300);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(239, 246, 255, 0.82));
+}
+
+.empty-panel strong {
+  color: var(--gray-700);
+  font-size: 16px;
+}
+
+.empty-panel span {
+  max-width: 360px;
+  color: var(--gray-500);
+}
+
 .priority-low { border-left: 3px solid var(--gray-400); }
 .priority-medium { border-left: 3px solid var(--warning); }
 .priority-high { border-left: 3px solid var(--danger); }
@@ -1347,6 +1479,82 @@ body {
   font-size: 13px;
   min-width: 40px;
   text-align: right;
+}
+
+@media (max-width: 1024px) {
+  .board {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .meeting-page {
+    flex-direction: column;
+  }
+
+  .meeting-sidebar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .header,
+  .tabs,
+  .main-content,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .main-content,
+  .management-page,
+  .meeting-page {
+    padding: 16px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+  }
+
+  .board-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .board-header,
+  .page-header,
+  .modal-header,
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions,
+  .filter-tabs,
+  .member-actions,
+  .meeting-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .gantt-row {
+    grid-template-columns: 1fr;
+  }
+
+  .gantt-member {
+    margin-bottom: 4px;
+  }
+
+  .project-card-meta,
+  .task-item,
+  .task-item-header {
+    flex-wrap: wrap;
+  }
+
+  .project-detail-modal,
+  .form-modal,
+  .report-modal {
+    min-width: 0;
+    width: min(100%, 96vw);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
