@@ -137,7 +137,7 @@ class DataStore {
       name,
       description: project.description || '',
       members: project.members || [],
-      status: project.status || 'not_started',
+      status: project.status || 'in_progress',
       weekKey: this.getWeekKey(this.data.currentWeek, this.data.currentYear),
       createdAt: new Date().toISOString()
     });
@@ -180,15 +180,13 @@ class DataStore {
     if (project.status === 'completed') return null;
 
     const id = this.generateId('t');
-    const status = task.status || 'pending';
+    const status = task.status || 'in_progress';
     let progress = task.progress !== undefined
       ? Math.min(100, Math.max(0, parseInt(task.progress, 10) || 0))
       : 0;
 
     if (status === 'completed') {
       progress = 100;
-    } else if (status === 'pending') {
-      progress = 0;
     } else if ((status === 'in_progress' || status === 'paused') && progress <= 0) {
       progress = 1;
     } else if ((status === 'in_progress' || status === 'paused') && progress >= 100) {
@@ -273,10 +271,6 @@ class DataStore {
         nextUpdates.progress = 100;
         nextUpdates.completedAt = new Date().toISOString();
         nextUpdates.pausedAt = null;
-      } else if (nextUpdates.status === 'pending') {
-        nextUpdates.progress = 0;
-        nextUpdates.completedAt = null;
-        nextUpdates.pausedAt = null;
       } else if (nextUpdates.status === 'in_progress') {
         nextUpdates.completedAt = null;
         nextUpdates.pausedAt = null;
@@ -296,15 +290,10 @@ class DataStore {
         nextUpdates.completedAt = new Date().toISOString();
         nextUpdates.pausedAt = null;
       } else if (nextUpdates.progress > 0 && nextUpdates.progress < 100) {
-        if (task.status === 'pending' || task.status === 'completed') {
-          nextUpdates.status = 'in_progress';
-        }
         if (task.status === 'completed') {
+          nextUpdates.status = 'in_progress';
           nextUpdates.completedAt = null;
         }
-      } else if (nextUpdates.progress === 0 && task.status !== 'paused') {
-        nextUpdates.status = 'pending';
-        nextUpdates.completedAt = null;
       }
     }
 
@@ -442,7 +431,7 @@ class DataStore {
     const total = weekTasks.length;
     const completed = weekTasks.filter(t => t.progress >= 100).length;
     const inProgress = weekTasks.filter(t => t.progress > 0 && t.progress < 100).length;
-    const pending = weekTasks.filter(t => !t.progress || t.progress === 0).length;
+    const notStarted = weekTasks.filter(t => !t.progress || t.progress === 0).length;
 
     const membersWithTasks = new Set(weekTasks.map(t => t.assignee).filter(Boolean)).size;
     const totalProgress = total > 0 ? Math.round(weekTasks.reduce((sum, t) => sum + (t.progress || 0), 0) / total) : 0;
@@ -451,7 +440,7 @@ class DataStore {
       total,
       completed,
       inProgress,
-      pending,
+      notStarted,
       progress: totalProgress,
       membersWithTasks
     };
@@ -589,6 +578,15 @@ class DataStore {
     });
 
     return grouped;
+  }
+
+  // Get all unfinished tasks for a specific member
+  getUnfinishedTasksByMember(memberId) {
+    return this.data.tasks.filter(t =>
+      t.assignee === memberId &&
+      t.status !== 'completed' &&
+      t.status !== 'paused'
+    );
   }
 }
 

@@ -5,7 +5,7 @@ class ChipTodoApp {
     this.currentMember = null;
     this.meetingWeek = null;
     this.meetingYear = null;
-    this.boardFilter = 'all'; // all, not_started, in_progress, paused, completed
+    this.boardFilter = 'all'; // all, in_progress, paused, completed
     this.init();
   }
 
@@ -116,7 +116,6 @@ class ChipTodoApp {
     const projectTaskStats = this.getProjectTaskStats(this.getTasksByStatusFilter(this.boardFilter));
     const filterLabels = {
       all: '全部任务',
-      not_started: '未开始',
       in_progress: '进行中',
       paused: '已暂停',
       completed: '已完成'
@@ -159,7 +158,6 @@ class ChipTodoApp {
             </div>
             <div class="filter-tabs">
               <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">全部</button>
-              <button class="filter-tab ${this.boardFilter === 'not_started' ? 'active' : ''}" data-filter="not_started">未开始</button>
               <button class="filter-tab ${this.boardFilter === 'in_progress' ? 'active' : ''}" data-filter="in_progress">进行中</button>
               <button class="filter-tab ${this.boardFilter === 'paused' ? 'active' : ''}" data-filter="paused">暂停</button>
               <button class="filter-tab ${this.boardFilter === 'completed' ? 'active' : ''}" data-filter="completed">已完成</button>
@@ -204,9 +202,6 @@ class ChipTodoApp {
   }
 
   getTasksByStatusFilter(filter) {
-    if (filter === 'not_started') {
-      return store.data.tasks.filter((task) => task.status === 'pending');
-    }
     if (filter === 'in_progress') {
       return store.data.tasks.filter((task) => task.status === 'in_progress');
     }
@@ -257,18 +252,16 @@ class ChipTodoApp {
   renderProjectItem(project, stats = { total: 0, completed: 0 }) {
     const isActive = this.currentProject === project.id ? 'active' : '';
     const statusLabels = {
-      not_started: '未开始',
       in_progress: '进行中',
       paused: '暂停',
       completed: '已结项'
     };
     const statusClass = {
-      not_started: 'status-pending',
       in_progress: 'status-in_progress',
       paused: 'status-paused',
       completed: 'status-completed'
     };
-    const projectStatus = project.status || 'not_started';
+    const projectStatus = project.status || 'in_progress';
     
     return `
       <div class="project-item ${isActive}" data-id="${project.id}">
@@ -457,18 +450,16 @@ class ChipTodoApp {
     const members = store.getProjectMembers(project.id);
     const completed = tasks.filter(t => t.status === 'completed').length;
     const statusLabels = {
-      not_started: '未开始',
       in_progress: '进行中',
       paused: '暂停',
       completed: '已结项'
     };
     const statusClass = {
-      not_started: 'status-pending',
       in_progress: 'status-in_progress',
       paused: 'status-paused',
       completed: 'status-completed'
     };
-    const projectStatus = project.status || 'not_started';
+    const projectStatus = project.status || 'in_progress';
     
     return `
       <div class="project-card" data-id="${project.id}">
@@ -496,18 +487,16 @@ class ChipTodoApp {
     const tasks = store.getTasksByProject(projectId);
     const members = store.getProjectMembers(projectId);
     const statusLabels = {
-      not_started: '未开始',
       in_progress: '进行中',
       paused: '暂停',
       completed: '已结项'
     };
     const statusClass = {
-      not_started: 'status-pending',
       in_progress: 'status-in_progress',
       paused: 'status-paused',
       completed: 'status-completed'
     };
-    let currentStatus = project.status || 'not_started';
+    let currentStatus = project.status || 'in_progress';
     const isCompletedProject = currentStatus === 'completed';
     const canAddTasks = !isCompletedProject;
     
@@ -522,7 +511,6 @@ class ChipTodoApp {
       <div class="project-detail-section">
         <h3>${Utils.icon('chart')} 项目状态</h3>
         <select name="status" class="project-status-select" id="projectStatusSelect">
-          <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
           <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
           <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
           <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>已结项</option>
@@ -684,7 +672,7 @@ class ChipTodoApp {
 
   showProjectModal(project = null) {
     const isEdit = !!project;
-    const currentStatus = project?.status || 'not_started';
+    const currentStatus = project?.status || 'in_progress';
     const modalContent = Utils.createElement('div', { class: 'form-modal' });
     modalContent.innerHTML = `
       <h2>${isEdit ? '编辑项目' : '新建项目'}</h2>
@@ -696,7 +684,6 @@ class ChipTodoApp {
         <div class="form-group">
           <label>状态</label>
           <select name="status">
-            <option value="not_started" ${currentStatus === 'not_started' ? 'selected' : ''}>未开始</option>
             <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>进行中</option>
             <option value="paused" ${currentStatus === 'paused' ? 'selected' : ''}>暂停</option>
             <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>已结项</option>
@@ -814,8 +801,7 @@ class ChipTodoApp {
         <div class="form-group">
           <label>状态</label>
           <select name="status" ${isLockedCompletedProject ? 'disabled' : ''}>
-            <option value="pending" ${!task || task.status === 'pending' ? 'selected' : ''}>待处理</option>
-            <option value="in_progress" ${task?.status === 'in_progress' ? 'selected' : ''}>进行中</option>
+            <option value="in_progress" ${!task || task.status === 'in_progress' ? 'selected' : ''}>进行中</option>
             <option value="paused" ${task?.status === 'paused' ? 'selected' : ''}>暂停</option>
             <option value="completed" ${task?.status === 'completed' ? 'selected' : ''}>已完成</option>
           </select>
@@ -971,12 +957,10 @@ class ChipTodoApp {
     const weekRange = Utils.getWeekRange(week, year);
     const meetingsList = store.getMeetingsList();
     
-    const attendeeCheckboxes = members.map(m => `
-      <label class="attendee-checkbox">
-        <input type="checkbox" value="${m.id}" ${meeting?.attendees?.includes(m.id) ? 'checked' : ''}>
+    const attendeeList = members.map(m => `
+      <span class="attendee-item" title="${Utils.escapeHtml(m.name)}">
         <span class="member-avatar" style="background:${m.color}">${m.name[0]}</span>
-        <span>${Utils.escapeHtml(m.name)}</span>
-      </label>
+      </span>
     `).join('');
     
     let tasksHtml = '';
@@ -985,17 +969,32 @@ class ChipTodoApp {
       const memberName = member ? member.name : '未分配';
       const memberColor = member ? member.color : '#6B7280';
       
+      const priorityLabels = { low: '低', medium: '中', high: '高' };
+      const priorityIcons = { 
+        low: Utils.icon('arrowDown'), 
+        medium: Utils.icon('minus'), 
+        high: Utils.icon('arrowUp') 
+      };
+      
       const taskItems = tasks.map(task => {
         const project = store.data.projects.find(p => p.id === task.projectId);
         const projectName = project ? project.name : '未指定项目';
         const taskReport = meeting?.taskReports?.[task.id] || {};
+        const priority = task.priority || 'medium';
         
         return `
-          <div class="meeting-task-item" data-task-id="${task.id}">
+          <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assigneeId || ''}">
             <div class="task-item-header">
-              <span class="task-name">${Utils.escapeHtml(task.name)}</span>
               <span class="task-project">${Utils.escapeHtml(projectName)}</span>
-              <span class="task-progress" style="color: ${this.getProgressColor(task.progress)}">${task.progress}%</span>
+              <span class="task-sep">|</span>
+              <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+              <span class="task-sep">|</span>
+              <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
+              <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="删除记录">${Utils.icon('trash')}</button>
+            </div>
+            <div class="task-progress-slider">
+              <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
+              <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
             </div>
             <div class="task-report-fields">
               <div class="report-field">
@@ -1006,20 +1005,17 @@ class ChipTodoApp {
                 <label>${Utils.icon('alertCircle')} 遇到问题</label>
                 <textarea class="task-issues" placeholder="遇到什么困难或问题...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
               </div>
-              <div class="report-field">
-                <label>${Utils.icon('target')} 下周计划</label>
-                <textarea class="task-plan" placeholder="下周计划做什么...">${Utils.escapeHtml(taskReport.plan || '')}</textarea>
-              </div>
             </div>
           </div>
         `;
       }).join('');
       
       tasksHtml += `
-        <div class="meeting-member-group">
+        <div class="meeting-member-group" data-assignee-id="${assigneeId}">
           <div class="meeting-member-header">
             <span class="member-avatar" style="background:${memberColor}">${memberName[0]}</span>
             <span class="member-name">${Utils.escapeHtml(memberName)}</span>
+            <button class="btn btn-small btn-outline add-task-btn" data-assignee-id="${assigneeId}" data-member-name="${Utils.escapeHtml(memberName)}">${Utils.icon('plus')} 添加任务</button>
           </div>
           <div class="meeting-tasks">
             ${taskItems}
@@ -1070,7 +1066,7 @@ class ChipTodoApp {
             <div class="form-group">
               <label>参会人员</label>
               <div class="attendees-list">
-                ${attendeeCheckboxes}
+                ${attendeeList}
               </div>
             </div>
             
@@ -1082,10 +1078,27 @@ class ChipTodoApp {
           
           <div class="meeting-tasks-section">
             <h3>${Utils.icon('document')} 任务进展记录 (${Object.values(tasksByAssignee).flat().length}项)</h3>
-            <p class="meeting-hint">为每个任务记录：本周工作内容、遇到的问题、下周计划</p>
+            <p class="meeting-hint">为每个任务记录：本周工作内容、遇到的问题</p>
             <div class="meeting-tasks-list">
               ${tasksHtml}
             </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="taskSelectModal" class="task-select-modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>选择任务 - <span id="modalMemberName"></span></h3>
+            <button class="btn btn-icon modal-close" id="closeTaskModal">${Utils.icon('x')}</button>
+          </div>
+          <div class="modal-body">
+            <div id="taskSelectList" class="task-select-list"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelTaskModal">取消</button>
+            <button class="btn btn-primary" id="confirmTaskModal">添加选中任务</button>
           </div>
         </div>
       </div>
@@ -1094,18 +1107,28 @@ class ChipTodoApp {
     Utils.$('#saveMeetingBtn')?.addEventListener('click', () => {
       const date = Utils.$('#meetingDate').value;
       const notes = Utils.$('#meetingNotes').value;
-      const attendees = Array.from(Utils.$$('#meetingView input[type="checkbox"]:checked')).map(cb => cb.value);
       
-      store.saveMeeting(week, year, { date, notes, attendees });
+      const attendees = [];
       
       Utils.$$('.meeting-task-item').forEach(taskEl => {
         const taskId = taskEl.dataset.taskId;
+        const assigneeId = taskEl.dataset.assigneeId;
         const work = taskEl.querySelector('.task-work')?.value || '';
         const issues = taskEl.querySelector('.task-issues')?.value || '';
-        const plan = taskEl.querySelector('.task-plan')?.value || '';
+        const progress = parseInt(taskEl.querySelector('.task-progress-input')?.value || '0', 10);
 
-        store.updateTaskReport(week, year, taskId, { work, issues, plan });
+        store.updateTaskReport(week, year, taskId, { work, issues });
+        
+        if (assigneeId && (work || issues)) {
+          if (!attendees.includes(assigneeId)) {
+            attendees.push(assigneeId);
+          }
+        }
+        
+        store.updateTask(taskId, { progress });
       });
+      
+      store.saveMeeting(week, year, { date, notes, attendees });
       
       alert('会议记录已保存！');
       this.renderMeeting();
@@ -1113,6 +1136,143 @@ class ChipTodoApp {
     
     Utils.$('#generateReportBtn')?.addEventListener('click', () => {
       this.showMeetingReport(week, year);
+    });
+    
+    let currentAddTaskMemberId = null;
+    const existingTaskIds = new Set(Object.values(tasksByAssignee).flat().map(t => t.id));
+    
+    Utils.$$('.add-task-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        currentAddTaskMemberId = btn.dataset.assigneeId;
+        const memberName = btn.dataset.memberName;
+        
+        const allTasks = store.getUnfinishedTasksByMember(currentAddTaskMemberId);
+        const availableTasks = allTasks.filter(t => !existingTaskIds.has(t.id));
+        
+        const modal = Utils.$('#taskSelectModal');
+        const taskList = Utils.$('#taskSelectList');
+        Utils.$('#modalMemberName').textContent = memberName;
+        
+        if (availableTasks.length === 0) {
+          taskList.innerHTML = '<p class="empty">该成员没有未完成的任务</p>';
+        } else {
+          taskList.innerHTML = availableTasks.map(task => {
+            const project = store.data.projects.find(p => p.id === task.projectId);
+            const projectName = project ? project.name : '未指定项目';
+            return `
+              <label class="task-select-item">
+                <input type="checkbox" value="${task.id}">
+                <span class="task-select-name">${Utils.escapeHtml(task.name)}</span>
+                <span class="task-select-project">${Utils.escapeHtml(projectName)}</span>
+                <span class="task-select-progress" style="color: ${this.getProgressColor(task.progress || 0)}">${task.progress || 0}%</span>
+              </label>
+            `;
+          }).join('');
+        }
+        
+        modal.classList.remove('hidden');
+      });
+    });
+    
+    Utils.$('#closeTaskModal')?.addEventListener('click', () => {
+      Utils.$('#taskSelectModal').classList.add('hidden');
+    });
+    
+    Utils.$('#cancelTaskModal')?.addEventListener('click', () => {
+      Utils.$('#taskSelectModal').classList.add('hidden');
+    });
+    
+    Utils.$('.modal-backdrop')?.addEventListener('click', () => {
+      Utils.$('#taskSelectModal').classList.add('hidden');
+    });
+    
+    Utils.$('#confirmTaskModal')?.addEventListener('click', () => {
+      const selectedCheckboxes = Utils.$$('#taskSelectList input[type="checkbox"]:checked');
+      const selectedTaskIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+      
+      if (selectedTaskIds.length > 0) {
+        const memberGroup = Utils.$(`.meeting-member-group[data-assignee-id="${currentAddTaskMemberId}"]`);
+        const tasksContainer = memberGroup?.querySelector('.meeting-tasks');
+        
+        const priorityLabels = { low: '低', medium: '中', high: '高' };
+        const priorityIcons = { 
+          low: Utils.icon('arrowDown'), 
+          medium: Utils.icon('minus'), 
+          high: Utils.icon('arrowUp') 
+        };
+        
+        selectedTaskIds.forEach(taskId => {
+          const task = store.data.tasks.find(t => t.id === taskId);
+          if (!task) return;
+          
+          const project = store.data.projects.find(p => p.id === task.projectId);
+          const projectName = project ? project.name : '未指定项目';
+          const meeting = store.getMeeting(week, year);
+          const taskReport = meeting?.taskReports?.[task.id] || {};
+          const priority = task.priority || 'medium';
+          
+          const taskHtml = `
+            <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assignee || ''}">
+              <div class="task-item-header">
+                <span class="task-project">${Utils.escapeHtml(projectName)}</span>
+                <span class="task-sep">|</span>
+                <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+                <span class="task-sep">|</span>
+                <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
+                <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="删除记录">${Utils.icon('trash')}</button>
+              </div>
+              <div class="task-progress-slider">
+                <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
+                <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
+              </div>
+              <div class="task-report-fields">
+                <div class="report-field">
+                  <label>${Utils.icon('check')} 本周工作</label>
+                  <textarea class="task-work" placeholder="本周完成了什么工作...">${Utils.escapeHtml(taskReport.work || '')}</textarea>
+                </div>
+                <div class="report-field">
+                  <label>${Utils.icon('alertCircle')} 遇到问题</label>
+                  <textarea class="task-issues" placeholder="遇到什么困难或问题...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
+                </div>
+              </div>
+            </div>
+          `;
+          
+          tasksContainer.insertAdjacentHTML('beforeend', taskHtml);
+        });
+        
+        Utils.$('#taskSelectModal').classList.add('hidden');
+        
+        Utils.$$('.meeting-tasks .meeting-task-item:last-child .task-progress-input').forEach(slider => {
+          slider.addEventListener('input', (e) => {
+            const valueSpan = e.target.closest('.task-progress-slider').querySelector('.progress-value');
+            valueSpan.textContent = e.target.value;
+          });
+        });
+      } else {
+        Utils.$('#taskSelectModal').classList.add('hidden');
+      }
+    });
+    
+    Utils.$$('.task-progress-input').forEach(slider => {
+      slider.addEventListener('input', (e) => {
+        const valueSpan = e.target.closest('.task-progress-slider').querySelector('.progress-value');
+        valueSpan.textContent = e.target.value;
+      });
+    });
+    
+    Utils.$$('.remove-task-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const taskItem = btn.closest('.meeting-task-item');
+        const taskId = taskItem.dataset.taskId;
+        const taskName = taskItem.querySelector('.task-name')?.textContent || '该任务';
+        
+        if (confirm(`确定要从会议记录中删除"${taskName}"吗？\n（不会删除任务本身，只删除会议中的进展记录）`)) {
+          taskItem.remove();
+        }
+      });
     });
     
     Utils.$('#prevMeetingWeek')?.addEventListener('click', () => {
@@ -1193,9 +1353,6 @@ class ChipTodoApp {
         }
         if (taskReport.issues) {
           reportContent += `- ⚠️ 遇到问题: ${taskReport.issues}\n`;
-        }
-        if (taskReport.plan) {
-          reportContent += `- 🎯 下周计划: ${taskReport.plan}\n`;
         }
         reportContent += `\n`;
       });

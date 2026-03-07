@@ -2,19 +2,23 @@
 
 ## Project Overview
 
-Vanilla HTML/CSS/JS single-page web application for chip testing department task management. Uses localStorage for data persistence.
+Vanilla HTML/CSS/JS SPA for chip testing department task management. Uses localStorage for data persistence.
 
 ## Project Structure
 
 ```
 ./
 ├── chip-todo/
-│   ├── index.html      # Main entry point
-│   ├── css/style.css   # All styles
+│   ├── index.html          # Main entry point
+│   ├── clear-data.html     # Data clearing utility
+│   ├── css/style.css       # All styles
 │   └── js/
-│       ├── utils.js    # Utility functions (loads first)
-│       ├── store.js    # Data persistence layer
-│       └── app.js      # Main application logic
+│       ├── utils.js        # Utility functions (loads first)
+│       ├── store.js        # Data persistence layer
+│       ├── demo-data.js    # Demo data generator
+│       └── app.js          # Main application logic
+├── tests/app.spec.js       # Playwright tests
+├── playwright.config.js
 ├── package.json
 └── .gitignore
 ```
@@ -22,21 +26,15 @@ Vanilla HTML/CSS/JS single-page web application for chip testing department task
 ## Build / Run Commands
 
 ### Running the Application
-
 ```bash
 # Windows: start chip-todo/index.html
-# macOS: open chip-todo/index.html
-# VS Code Live Server (recommended): Right-click index.html -> Open with Live Server
+# Python server: python3 -m http.server 5500 -d chip-todo
 ```
 
-### NPM Scripts
-
-Add to `package.json`:
+### NPM Scripts (add to package.json)
 ```json
 {
   "scripts": {
-    "lint": "eslint chip-todo/js/*.js",
-    "lint:fix": "eslint chip-todo/js/*.js --fix",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:single": "playwright test tests/app.spec.js"
@@ -45,89 +43,111 @@ Add to `package.json`:
 ```
 
 ### Testing
-
 ```bash
-# Install deps: npm install --save-dev eslint @playwright/test
+# Install deps: npm install --save-dev @playwright/test
 # Install browsers: npx playwright install chromium
 # Run all tests: npm test
 # Run single test: npm run test:single
 # Run with UI: npm run test:ui
-```
-
-**Playwright config** (`playwright.config.js`):
-```javascript
-const { defineConfig } = require('@playwright/test');
-module.exports = defineConfig({
-  testDir: './tests',
-  timeout: 30000,
-  use: { headless: true, baseURL: 'http://localhost:5500' },
-  webServer: { command: 'npx serve -l 5500 chip-todo', port: 5500, reuseExistingServer: true },
-});
+# Run specific test: npx playwright test -g "test name"
 ```
 
 ## Code Style Guidelines
 
-### Naming
+### Naming Conventions
 - **Classes**: PascalCase (`ChipTodoApp`, `DataStore`)
 - **Functions/variables**: camelCase (`getWeekKey`, `currentView`)
-- **Constants**: UPPER_SNAKE_CASE (`STORAGE_KEY`, `DEFAULT_DATA`)
+- **Constants**: UPPER_SNAKE_CASE (`STORAGE_KEY`, `MEETINGS_KEY`)
 - **DOM elements**: Prefix with `$` (`this.$container`)
 - **Private methods**: Prefix with `_` (`_bindEvents()`)
 
 ### File Organization
 ```javascript
-// 1. Constants → 2. Class definitions → 3. Utility objects → 4. Init
+// Order: Constants → Class definitions → Utility objects → Init
 const STORAGE_KEY = 'chip_todo_data';
 class DataStore { ... }
 const Utils = { ... };
 const store = new DataStore();
 ```
 
-### Imports (Script Tag Order)
+### Script Load Order (in index.html)
 ```html
 <script src="js/utils.js"></script>
 <script src="js/store.js"></script>
+<script src="js/demo-data.js"></script>
 <script src="js/app.js"></script>
 ```
 
-### Type Guidelines (JSDoc)
-```javascript
-/**
- * @typedef {Object} Task
- * @property {string} id
- * @property {string} status - 'pending' | 'in_progress' | 'completed'
- */
-/** @param {number} week @returns {Task[]} */
-getTasksByWeek(week) { ... }
-```
-
 ### Error Handling
-- Wrap localStorage in try-catch
-- Use alert() for user messages
+- Wrap localStorage operations in try-catch
+- Use alert() for user-facing messages
 - Validate form inputs before processing
 
 ### Formatting
-- 2 spaces indentation, max 100 chars/line
-- Template literals over concatenation
+- 2 spaces indentation
+- Max 100 characters per line
+- Use template literals instead of string concatenation
 - Prefer const, avoid var
 
 ### CSS Conventions
 - CSS custom properties for colors/spacing
-- BEM-lite: `.block`, `.block__element`, `.block--modifier`
+- BEM-lite naming: `.block`, `.block__element`
 
-### Git Conventions
-- Imperative commit messages
-- Branch: `feature/description`, `bugfix/description`
+## Status Types
 
-## Additional Notes
+### Project Status (3 states)
+- `in_progress` - 进行中
+- `paused` - 暂停
+- `completed` - 已结项
 
-- localStorage keys: `chip_todo_data`, `chip_todo_history`
-- No authentication or server-side storage
+### Task Status (3 states)
+- `in_progress` - 进行中
+- `paused` - 暂停
+- `completed` - 已完成
 
-### Debugging Tips
-- Use DevTools: `localStorage.getItem('chip_todo_data')` to view raw data
-- Use `localStorage.clear()` to reset data during testing
+### Task Priority
+- `low` - 低
+- `medium` - 中
+- `high` - 高
 
-### Cursor / Copilot Rules
-- No Cursor rules found (no `.cursor/rules/` or `.cursorrules`)
-- No Copilot rules found (no `.github/copilot-instructions.md`)
+## Data Models
+
+### localStorage Keys
+- `chip_todo_data` - Main app data (projects, tasks, members)
+- `chip_todo_meetings` - Meeting reports
+
+### Data Structure
+```javascript
+{
+  projects: [{ id, name, status, members: [...], ... }],
+  members: [{ id, name, role, color }],
+  tasks: [{ id, name, projectId, status, priority, progress, assignee, ... }]
+}
+```
+
+## Testing Guidelines
+
+### Test Pattern
+```javascript
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+});
+
+test('should add new project', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept());
+  await page.click('.tab[data-view="management"]');
+  // ... test logic
+});
+```
+
+## Debugging Tips
+
+- DevTools console: `localStorage.getItem('chip_todo_data')` to view raw data
+- Reset: `localStorage.clear()` to clear all data
+- Check browser console for runtime errors
+
+## Cursor / Copilot Rules
+- No Cursor rules found
+- No Copilot rules found

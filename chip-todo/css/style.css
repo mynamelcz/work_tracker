@@ -906,27 +906,19 @@ body {
 .attendees-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
-.attendee-checkbox {
-  display: flex;
+.attendee-item {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: var(--gray-50);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all 0.2s;
+  cursor: default;
+  transition: transform 0.2s;
 }
 
-.attendee-checkbox:hover {
-  background: var(--gray-100);
-}
-
-.attendee-checkbox input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+.attendee-item:hover {
+  transform: scale(1.1);
 }
 
 .meeting-tasks-section {
@@ -997,13 +989,43 @@ body {
 .task-item-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 12px;
+}
+
+.task-item-header .task-project {
+  font-size: 12px;
+  color: var(--primary);
+  background: #EFF6FF;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.task-item-header .task-sep {
+  color: var(--gray-400);
+  font-size: 12px;
 }
 
 .task-item-header .task-name {
   flex: 1;
   font-weight: 500;
+}
+
+.task-item-header .task-priority {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.task-item-header .remove-task-btn {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.task-item-header .remove-task-btn:hover {
+  opacity: 1;
 }
 
 .task-report-fields {
@@ -1087,6 +1109,53 @@ body {
   font-weight: 600;
   min-width: 45px;
   text-align: right;
+}
+
+.meeting-task-item .task-progress-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.meeting-task-item .task-progress-slider label {
+  font-size: 13px;
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+
+.meeting-task-item .task-progress-slider .progress-value {
+  font-weight: 600;
+  color: var(--primary);
+  min-width: 30px;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"] {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--gray-200);
+  border-radius: 3px;
+  outline: none;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
 }
 
 .history-list {
@@ -1577,4 +1646,126 @@ body {
   .progress-fill {
     transition: none;
   }
+}
+
+.task-select-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-select-modal.hidden {
+  display: none;
+}
+
+.task-select-modal .modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.task-select-modal .modal-content {
+  position: relative;
+  background: white;
+  border-radius: var(--radius);
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.task-select-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.task-select-modal .modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--gray-800);
+}
+
+.task-select-modal .modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.task-select-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.task-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-select-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--gray-50);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.task-select-item:hover {
+  background: var(--gray-100);
+}
+
+.task-select-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.task-select-item .task-select-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.task-select-item .task-select-project {
+  font-size: 12px;
+  color: var(--primary);
+  background: #EFF6FF;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.task-select-item .task-select-progress {
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+.meeting-member-header .add-task-btn {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.meeting-member-header {
+  flex-wrap: wrap;
 }
