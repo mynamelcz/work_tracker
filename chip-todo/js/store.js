@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'chip_todo_data';
+﻿const STORAGE_KEY = 'chip_todo_data';
 const HISTORY_KEY = 'chip_todo_history';
 const MEETINGS_KEY = 'chip_todo_meetings';
 
@@ -324,6 +324,23 @@ class DataStore {
     return this.data.projects.find(project => project.id === projectId) || null;
   }
 
+  createMeetingTaskSnapshot(task) {
+    const project = this.getProject(task.projectId);
+    const member = this.data.members.find((item) => item.id === task.assignee) || null;
+
+    return {
+      id: task.id,
+      projectId: task.projectId,
+      projectName: project ? project.name : '未指定项目',
+      name: task.name,
+      assignee: task.assignee || '',
+      assigneeName: member ? member.name : '未分配',
+      priority: task.priority || 'medium',
+      progress: Number.isFinite(task.progress) ? task.progress : 0,
+      status: task.status || 'in_progress'
+    };
+  }
+
   hasIncompleteProjectTasks(projectId) {
     return this.data.tasks.some(task => (
       task.projectId === projectId &&
@@ -447,6 +464,79 @@ class DataStore {
   }
 
   // Meeting Records
+  normalizeMeetingDateTime(value) {
+    const date = value ? new Date(value) : new Date();
+    if (Number.isNaN(date.getTime())) {
+      return new Date().toISOString();
+    }
+    return date.toISOString();
+  }
+
+  normalizeMeetingTask(task) {
+    if (!task || !task.id) return null;
+
+    const storedTask = this.data.tasks.find((item) => item.id === task.id) || null;
+    const project = storedTask ? this.getProject(storedTask.projectId) : this.getProject(task.projectId);
+    const member = this.data.members.find((item) => item.id === (task.assignee || storedTask?.assignee)) || null;
+    const parsedProgress = parseInt(task.progress, 10);
+    const progress = Number.isFinite(parsedProgress)
+      ? Math.min(100, Math.max(0, parsedProgress))
+      : (storedTask?.progress || 0);
+
+    return {
+      id: task.id,
+      projectId: task.projectId || storedTask?.projectId || '',
+      projectName: task.projectName || project?.name || '\u672a\u547d\u540d\u4efb\u52a1',
+      name: this.sanitizeName(task.name || storedTask?.name || '\u672a\u547d\u540d\u4efb\u52a1') || '\u672a\u547d\u540d\u4efb\u52a1',
+      assignee: task.assignee || storedTask?.assignee || '',
+      assigneeName: task.assigneeName || member?.name || '\u672a\u5206\u914d',
+      priority: ['low', 'medium', 'high'].includes(task.priority) ? task.priority : (storedTask?.priority || 'medium'),
+      progress,
+      status: task.status || storedTask?.status || (progress >= 100 ? 'completed' : 'in_progress')
+    };
+  }
+
+  normalizeMeetingRecord(meeting, index = 0) {
+    const createdAt = this.normalizeMeetingDateTime(
+      meeting?.createdAt || meeting?.scheduledAt || meeting?.date || meeting?.updatedAt
+    );
+    const updatedAt = this.normalizeMeetingDateTime(meeting?.updatedAt || createdAt);
+    const fallbackTasks = Object.keys(meeting?.taskReports || {})
+      .map((taskId) => {
+        const task = this.data.tasks.find((item) => item.id === taskId);
+        return task ? this.createMeetingTaskSnapshot(task) : null;
+      })
+      .filter(Boolean);
+    const tasks = (Array.isArray(meeting?.tasks) && meeting.tasks.length > 0
+      ? meeting.tasks
+      : fallbackTasks)
+      .map((task) => this.normalizeMeetingTask(task))
+      .filter(Boolean);
+    const attendees = Array.isArray(meeting?.attendees)
+      ? Array.from(new Set(meeting.attendees.filter(Boolean)))
+      : [];
+    const taskReports = Object.entries(meeting?.taskReports || {}).reduce((acc, [taskId, report]) => {
+      acc[taskId] = {
+        work: String(report?.work || ''),
+        issues: String(report?.issues || ''),
+        plan: String(report?.plan || ''),
+        updatedAt: this.normalizeMeetingDateTime(report?.updatedAt || updatedAt)
+      };
+      return acc;
+    }, {});
+
+    return {
+      id: meeting?.id || meeting?.weekKey || this.generateId('mtg_' + index),
+      title: this.sanitizeName(meeting?.title || meeting?.subject || '\u5468\u4f1a') || '\u5468\u4f1a',
+      attendees,
+      notes: String(meeting?.notes || ''),
+      taskReports,
+      tasks,
+      createdAt,
+      updatedAt
+    };
+  }
+
   getMeetings() {
     if (this.meetingsCache) {
       return this.meetingsCache;
@@ -456,7 +546,8 @@ class DataStore {
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        this.meetingsCache = Array.isArray(parsed) ? parsed : [];
+        const meetings = Array.isArray(parsed) ? parsed : [];
+        this.meetingsCache = meetings.map((meeting, index) => this.normalizeMeetingRecord(meeting, index));
         return this.meetingsCache;
       } catch (e) {
         this.meetingsCache = [];
@@ -469,34 +560,31 @@ class DataStore {
   }
 
   saveMeetings(meetings) {
-    this.meetingsCache = Array.isArray(meetings) ? meetings : [];
+    const normalizedMeetings = (Array.isArray(meetings) ? meetings : [])
+      .map((meeting, index) => this.normalizeMeetingRecord(meeting, index))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    this.meetingsCache = normalizedMeetings;
     localStorage.setItem(MEETINGS_KEY, JSON.stringify(this.meetingsCache));
   }
 
-  getMeeting(week, year) {
-    const meetings = this.getMeetings();
-    const weekKey = this.getWeekKey(week, year);
-    return meetings.find(m => m.weekKey === weekKey) || null;
+  getMeeting(id) {
+    if (!id) return null;
+    return this.getMeetings().find((meeting) => meeting.id === id) || null;
   }
 
-  saveMeeting(week, year, data) {
+  saveMeeting(data) {
     const meetings = this.getMeetings();
-    const weekKey = this.getWeekKey(week, year);
-    const existingIndex = meetings.findIndex(m => m.weekKey === weekKey);
-
+    const existingIndex = data?.id ? meetings.findIndex((meeting) => meeting.id === data.id) : -1;
     const existingMeeting = existingIndex >= 0 ? meetings[existingIndex] : null;
-
-    const meeting = {
-      weekKey,
-      week,
-      year,
-      date: data.date || new Date().toISOString().split('T')[0],
-      attendees: data.attendees || [],
-      notes: data.notes || '',
-      taskReports: this.clone(existingMeeting?.taskReports || {}),
-      createdAt: existingMeeting?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    const now = new Date().toISOString();
+    const meeting = this.normalizeMeetingRecord({
+      ...existingMeeting,
+      ...data,
+      id: existingMeeting?.id || data?.id || this.generateId('mtg'),
+      createdAt: existingMeeting?.createdAt || data?.createdAt || now,
+      updatedAt: now
+    });
 
     if (existingIndex >= 0) {
       meetings[existingIndex] = meeting;
@@ -508,50 +596,101 @@ class DataStore {
     return meeting;
   }
 
-  updateTaskReport(week, year, taskId, report) {
-    const meetings = this.getMeetings();
-    const weekKey = this.getWeekKey(week, year);
-    const existingIndex = meetings.findIndex(m => m.weekKey === weekKey);
-
-    if (existingIndex >= 0) {
-      const taskReports = meetings[existingIndex].taskReports || {};
-      const normalizedReport = {
-        work: report.work || '',
-        issues: report.issues || '',
-        plan: report.plan || ''
-      };
-      const hasContent = Object.values(normalizedReport).some(Boolean);
-
-      if (hasContent) {
-        taskReports[taskId] = {
-          ...normalizedReport,
-          updatedAt: new Date().toISOString()
-        };
-      } else {
-        delete taskReports[taskId];
-      }
-
-      meetings[existingIndex].taskReports = taskReports;
-      meetings[existingIndex].updatedAt = new Date().toISOString();
-      this.saveMeetings(meetings);
-    }
+  deleteMeeting(id) {
+    const meetings = this.getMeetings().filter((meeting) => meeting.id !== id);
+    this.saveMeetings(meetings);
   }
 
-  getMeetingsList() {
-    const meetings = [...this.getMeetings()];
-    return meetings
-      .sort((a, b) => {
-        if (a.year !== b.year) return b.year - a.year;
-        return b.week - a.week;
-      })
-      .map(m => ({
-        weekKey: m.weekKey,
-        week: m.week,
-        year: m.year,
-        date: m.date,
-        notes: m.notes?.substring(0, 50) || '',
-        attendeeCount: m.attendees?.length || 0
-      }));
+  updateTaskReport(meetingId, taskId, report) {
+    const meeting = this.getMeeting(meetingId);
+    if (!meeting) return null;
+
+    const taskReports = this.clone(meeting.taskReports || {});
+    const normalizedReport = {
+      work: String(report?.work || ''),
+      issues: String(report?.issues || ''),
+      plan: String(report?.plan || '')
+    };
+    const hasContent = Object.values(normalizedReport).some(Boolean);
+
+    if (hasContent) {
+      taskReports[taskId] = {
+        ...normalizedReport,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      delete taskReports[taskId];
+    }
+
+    return this.saveMeeting({
+      ...meeting,
+      taskReports
+    });
+  }
+
+  searchMeetings(filters = '') {
+    const normalizedFilters = typeof filters === 'string'
+      ? { query: filters, startDate: '', endDate: '' }
+      : (filters || {});
+    const normalizedQuery = String(normalizedFilters.query || '').trim().toLowerCase();
+    const startDate = normalizedFilters.startDate || '';
+    const endDate = normalizedFilters.endDate || '';
+    const startBoundary = startDate ? new Date(`${startDate}T00:00:00`) : null;
+    const endBoundary = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+    const meetings = [...this.getMeetings()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return meetings.filter((meeting) => {
+      const attendeeNames = meeting.attendees
+        .map((attendeeId) => this.data.members.find((member) => member.id === attendeeId)?.name || '')
+        .join(' ');
+      const haystack = [
+        meeting.title,
+        meeting.notes,
+        attendeeNames,
+        meeting.createdAt,
+        meeting.updatedAt
+      ].join(' ').toLowerCase();
+      const meetingCreatedAt = new Date(meeting.createdAt);
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+      const matchesStart = !startBoundary || meetingCreatedAt >= startBoundary;
+      const matchesEnd = !endBoundary || meetingCreatedAt <= endBoundary;
+      return matchesQuery && matchesStart && matchesEnd;
+    });
+  }
+
+  getMeetingsList(filters = '') {
+    return this.searchMeetings(filters).map((meeting) => ({
+      id: meeting.id,
+      title: meeting.title,
+      createdAt: meeting.createdAt,
+      updatedAt: meeting.updatedAt,
+      notes: meeting.notes?.substring(0, 60) || '',
+      attendeeCount: meeting.attendees?.length || 0,
+      taskCount: meeting.tasks?.length || 0,
+      attendeeNames: meeting.attendees
+        .map((attendeeId) => this.data.members.find((member) => member.id === attendeeId)?.name || '\u672a\u77e5\u6210\u5458')
+    }));
+  }
+
+  getMeetingTasks(meetingId) {
+    const meeting = this.getMeeting(meetingId);
+    if (!meeting) return [];
+    return this.clone(meeting.tasks || []);
+  }
+
+  groupMeetingTasksByAssignee(tasks) {
+    return (Array.isArray(tasks) ? tasks : []).reduce((grouped, task) => {
+      const assigneeId = task.assignee || 'unassigned';
+      if (!grouped[assigneeId]) {
+        grouped[assigneeId] = [];
+      }
+      grouped[assigneeId].push(this.normalizeMeetingTask(task));
+      return grouped;
+    }, {});
+  }
+
+  getMeetingTasksByAssignee(meetingId) {
+    return this.groupMeetingTasksByAssignee(this.getMeetingTasks(meetingId));
   }
 
   // Get tasks excluding completed and paused
@@ -592,3 +731,4 @@ class DataStore {
 
 const store = new DataStore();
 window.store = store;
+

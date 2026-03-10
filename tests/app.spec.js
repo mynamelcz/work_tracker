@@ -1,3 +1,4 @@
+const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 
 test.describe('Chip Todo App', () => {
@@ -5,12 +6,20 @@ test.describe('Chip Todo App', () => {
     await page.click('.tab[data-view="management"]');
   }
 
-  async function createProject(page, name, status = 'not_started') {
+  async function createProject(page, name, status = 'in_progress') {
     await openManagement(page);
     await page.click('#newProjectBtn');
     await page.fill('input[name="name"]', name);
     await page.selectOption('select[name="status"]', status);
-    await page.click('button[type="submit"]');
+    await page.click('#projectForm button[type="submit"]');
+  }
+
+  async function createMember(page, name, role = '\u6210\u5458') {
+    await openManagement(page);
+    await page.click('#newMemberBtn');
+    await page.fill('#memberForm input[name="name"]', name);
+    await page.fill('#memberForm input[name="role"]', role);
+    await page.click('#memberForm button[type="submit"]');
   }
 
   async function openProjectDetail(page, name) {
@@ -24,6 +33,9 @@ test.describe('Chip Todo App', () => {
     await page.fill('input[name="name"]', name);
     if (options.projectName) {
       await page.selectOption('select[name="projectId"]', { label: options.projectName });
+    }
+    if (options.assigneeName) {
+      await page.selectOption('select[name="assignee"]', { label: options.assigneeName });
     }
     if (options.status) {
       await page.selectOption('select[name="status"]', options.status);
@@ -94,7 +106,7 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('h2').filter({ hasText: '新建项目' })).toBeVisible();
     
     await page.fill('input[name="name"]', 'Test Project');
-    await page.click('button[type="submit"]');
+    await page.click('#projectForm button[type="submit"]');
     
     await expect(page.locator('.project-card')).toContainText('Test Project');
   });
@@ -106,7 +118,7 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('h2').filter({ hasText: '添加成员' })).toBeVisible();
     
     await page.fill('input[name="name"]', '张三');
-    await page.click('button[type="submit"]');
+    await page.click('#memberForm button[type="submit"]');
     
     await page.waitForTimeout(500);
     await expect(page.locator('.member-cards .member-card')).toContainText('张三');
@@ -116,7 +128,7 @@ test.describe('Chip Todo App', () => {
     await page.click('.tab[data-view="management"]');
     await page.click('#newMemberBtn');
     await page.fill('input[name="name"]', '测试成员');
-    await page.click('button[type="submit"]');
+    await page.click('#memberForm button[type="submit"]');
     
     await page.waitForTimeout(500);
     const memberCard = page.locator('.member-cards .member-card');
@@ -145,7 +157,7 @@ test.describe('Chip Todo App', () => {
     await page.click('.tab[data-view="management"]');
     await page.click('#newProjectBtn');
     await page.fill('input[name="name"]', '测试项目');
-    await page.click('button[type="submit"]');
+    await page.click('#projectForm button[type="submit"]');
     
     await page.click('.project-card .view-btn');
     await expect(page.locator('.project-detail-modal')).toBeVisible();
@@ -156,7 +168,7 @@ test.describe('Chip Todo App', () => {
     await page.click('.tab[data-view="management"]');
     await page.click('#newProjectBtn');
     await page.fill('input[name="name"]', '测试项目');
-    await page.click('button[type="submit"]');
+    await page.click('#projectForm button[type="submit"]');
     
     await page.click('.project-card .view-btn');
     await expect(page.locator('.project-detail-modal')).toBeVisible();
@@ -185,7 +197,7 @@ test.describe('Chip Todo App', () => {
 
     await page.selectOption('#projectStatusSelect', 'completed');
 
-    await expect(page.locator('#projectStatusSelect')).toHaveValue('not_started');
+    await expect(page.locator('#projectStatusSelect')).toHaveValue('in_progress');
     await expect(page.locator('#addTaskToProject')).toBeEnabled();
   });
 
@@ -205,22 +217,167 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('.project-detail-modal .task-list')).toContainText('迁移任务');
   });
 
-  test('should clear stored meeting reports when task notes are emptied', async ({ page }) => {
-    await createProject(page, 'Meeting Project');
-    await openProjectDetail(page, 'Meeting Project');
-    await addTaskFromProjectDetail(page, '会议任务');
-
-    await page.click('.project-detail-modal .close-btn');
+  test('should default the meeting title to ?? and record exact creation time', async ({ page }) => {
     await page.click('.tab[data-view="meeting"]');
-    await page.fill('.meeting-task-item .task-work', '本周完成验证');
-    await page.click('#saveMeetingBtn');
 
-    await page.fill('.meeting-task-item .task-work', '');
+    await expect(page.locator('#meetingTitle')).toHaveValue('周会');
+    await expect(page.locator('#meetingCreatedAt')).toHaveValue(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+
+    await page.fill('#meetingTitle', 'Project Sync');
     await page.click('#saveMeetingBtn');
 
     const meetings = await page.evaluate(() => JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]'));
     expect(meetings).toHaveLength(1);
-    expect(Object.keys(meetings[0].taskReports || {})).toHaveLength(0);
+    expect(meetings[0].title).toBe('Project Sync');
+    expect(meetings[0].createdAt).toMatch(/T\d{2}:\d{2}:\d{2}/);
+  });
+
+  test('should import attendees and only show unfinished tasks for task import', async ({ page }) => {
+    await createProject(page, 'Meeting Import Project');
+    await createMember(page, '张三');
+
+    await openProjectDetail(page, 'Meeting Import Project');
+    await addTaskFromProjectDetail(page, 'Open Task', { assigneeName: '张三' });
+    await addTaskFromProjectDetail(page, 'Done Task', { assigneeName: '张三', status: 'completed' });
+
+    await page.click('.project-detail-modal .close-btn');
+    await page.click('.tab[data-view="meeting"]');
+    await page.click('#importAttendeesBtn');
+    await page.locator('.member-select-item', { hasText: '张三' }).locator('input').check();
+    await page.click('.meeting-selector-modal .confirm-btn');
+
+    await expect(page.locator('.meeting-attendee-cards')).toContainText('张三');
+
+    await page.locator('.meeting-member-group', { hasText: '张三' }).locator('.import-task-btn').click();
+    await expect(page.locator('.task-select-list')).toContainText('Open Task');
+    await expect(page.locator('.task-select-list')).not.toContainText('Done Task');
+
+    await page.locator('.task-select-item', { hasText: 'Open Task' }).locator('input').check();
+    await page.click('.meeting-selector-modal .confirm-btn');
+
+    await expect(page.locator('.meeting-tasks-list')).toContainText('Open Task');
+    await expect(page.locator('.meeting-tasks-list')).not.toContainText('Done Task');
+  });
+
+  test('should save meeting progress updates back to the task and record notes', async ({ page }) => {
+    await createProject(page, 'Progress Meeting Project');
+    await createMember(page, '李四');
+
+    await openProjectDetail(page, 'Progress Meeting Project');
+    await addTaskFromProjectDetail(page, 'Tracked Task', { assigneeName: '李四', progress: 20 });
+
+    await page.click('.project-detail-modal .close-btn');
+    await page.click('.tab[data-view="meeting"]');
+    await page.click('#importAttendeesBtn');
+    await page.locator('.member-select-item', { hasText: '李四' }).locator('input').check();
+    await page.click('.meeting-selector-modal .confirm-btn');
+    await page.locator('.meeting-member-group', { hasText: '李四' }).locator('.import-task-btn').click();
+    await page.locator('.task-select-item', { hasText: 'Tracked Task' }).locator('input').check();
+    await page.click('.meeting-selector-modal .confirm-btn');
+
+    await page.locator('.meeting-task-item .task-progress-input').fill('80');
+    await page.fill('.meeting-task-item .task-work', 'Progress captured in meeting');
+    await page.fill('#meetingNotes', 'Need to follow up tomorrow');
+    await page.click('#saveMeetingBtn');
+
+    const state = await page.evaluate(() => {
+      const data = JSON.parse(localStorage.getItem('chip_todo_data') || '{}');
+      const meetings = JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]');
+      return { data, meetings };
+    });
+
+    const trackedTask = state.data.tasks.find(task => task.name === 'Tracked Task');
+    expect(trackedTask.progress).toBe(80);
+    expect(state.meetings[0].notes).toBe('Need to follow up tomorrow');
+    expect(Object.values(state.meetings[0].taskReports)[0].work).toBe('Progress captured in meeting');
+  });
+
+  test('should create new meetings and query saved meetings by keyword', async ({ page }) => {
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('#meetingTitle', 'Weekly Sync');
+    await page.click('#saveMeetingBtn');
+
+    await page.click('#newMeetingBtn');
+    await expect(page.locator('#meetingTitle')).toHaveValue('周会');
+    await page.fill('#meetingTitle', 'Issue Review');
+    await page.fill('#meetingNotes', 'Focus on blockers');
+    await page.click('#saveMeetingBtn');
+
+    await page.fill('#meetingSearchInput', 'Review');
+    await page.click('#meetingSearchForm button[type="submit"]');
+
+    await expect(page.locator('.meeting-history-list')).toContainText('Issue Review');
+    await expect(page.locator('.meeting-history-list')).not.toContainText('Weekly Sync');
+
+    await page.click('#meetingSearchClearBtn');
+    await expect(page.locator('.meeting-history-list')).toContainText('Weekly Sync');
+    await expect(page.locator('.meeting-history-list')).toContainText('Issue Review');
+  });
+
+  test('should delete a saved meeting from the history list', async ({ page }) => {
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('#meetingTitle', 'Disposable Meeting');
+    await page.click('#saveMeetingBtn');
+
+    await expect(page.locator('.meeting-history-list')).toContainText('Disposable Meeting');
+
+    await page.click('#deleteMeetingBtn');
+    await page.waitForSelector('.confirm-modal');
+    await page.click('.confirm-modal .btn-danger[data-action="confirm"]');
+
+    await expect(page.locator('.meeting-history-list')).not.toContainText('Disposable Meeting');
+    await expect(page.locator('#meetingTitle')).toHaveValue('\u5468\u4f1a');
+
+    const meetings = await page.evaluate(() => JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]'));
+    expect(meetings).toHaveLength(0);
+  });
+
+  test('should filter meetings by created date range', async ({ page }) => {
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('#meetingTitle', 'Early Meeting');
+    await page.click('#saveMeetingBtn');
+
+    await page.click('#newMeetingBtn');
+    await page.fill('#meetingTitle', 'Late Meeting');
+    await page.click('#saveMeetingBtn');
+
+    await page.evaluate(() => {
+      const meetings = JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]');
+      const earlyMeeting = meetings.find(meeting => meeting.title === 'Early Meeting');
+      const lateMeeting = meetings.find(meeting => meeting.title === 'Late Meeting');
+      earlyMeeting.createdAt = '2026-03-01T09:00:00.000Z';
+      earlyMeeting.updatedAt = '2026-03-01T09:30:00.000Z';
+      lateMeeting.createdAt = '2026-03-10T09:00:00.000Z';
+      lateMeeting.updatedAt = '2026-03-10T09:30:00.000Z';
+      localStorage.setItem('chip_todo_meetings', JSON.stringify(meetings));
+    });
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('#meetingSearchStartDate', '2026-03-09');
+    await page.fill('#meetingSearchEndDate', '2026-03-10');
+    await page.click('#meetingSearchForm button[type="submit"]');
+
+    await expect(page.locator('.meeting-history-list')).toContainText('Late Meeting');
+    await expect(page.locator('.meeting-history-list')).not.toContainText('Early Meeting');
+  });
+
+  test('should export the meeting content as an html report', async ({ page }) => {
+    await page.click('.tab[data-view="meeting"]');
+    await page.fill('#meetingTitle', 'HTML Export Meeting');
+    await page.fill('#meetingNotes', 'Export this meeting to html');
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.click('#exportMeetingHtmlBtn');
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toMatch(/HTML-Export-Meeting-.*\.html$/);
+    const filePath = await download.path();
+    const html = fs.readFileSync(filePath, 'utf8');
+    expect(html).toContain('<html');
+    expect(html).toContain('HTML Export Meeting');
+    expect(html).toContain('Export this meeting to html');
   });
 
   test('should filter completed tasks on the board', async ({ page }) => {

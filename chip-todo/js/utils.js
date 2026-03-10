@@ -252,8 +252,8 @@ const Utils = {
     });
   },
 
-  downloadFile(content, filename) {
-    const blob = new Blob([content], { type: 'application/json' });
+  downloadFile(content, filename, mimeType = 'application/json') {
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "test": "playwright test",
+    "test:single": "playwright test tests/app.spec.js",
+    "test:ui": "playwright test --ui"
+  },
   "dependencies": {
     "oh-my-opencode-windows-x64": "^3.8.4"
   },

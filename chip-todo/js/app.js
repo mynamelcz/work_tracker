@@ -1,10 +1,13 @@
-class ChipTodoApp {
+﻿class ChipTodoApp {
   constructor() {
     this.currentView = 'board';
     this.currentProject = null;
     this.currentMember = null;
-    this.meetingWeek = null;
-    this.meetingYear = null;
+    this.currentMeetingId = null;
+    this.meetingDraft = null;
+    this.meetingSearchQuery = '';
+    this.meetingSearchStartDate = '';
+    this.meetingSearchEndDate = '';
     this.boardFilter = 'all'; // all, in_progress, paused, completed
     this.init();
   }
@@ -88,11 +91,25 @@ class ChipTodoApp {
   }
 
   switchView(view) {
+    if (this.currentView === 'meeting' && view !== 'meeting') {
+      this.collectMeetingDraftFromDom();
+    }
+
     this.currentView = view;
     Utils.$$('.tab').forEach(t => t.classList.remove('active'));
     Utils.$(`.tab[data-view="${view}"]`).classList.add('active');
     Utils.$$('.view').forEach(v => v.classList.add('hidden'));
     Utils.$(`#${view}View`).classList.remove('hidden');
+
+    if (view === 'board') {
+      this.renderBoard();
+    } else if (view === 'management') {
+      this.renderManagement();
+    } else if (view === 'meeting') {
+      this.renderMeeting();
+    }
+
+    this.updateStats();
   }
 
   updateStats() {
@@ -289,7 +306,7 @@ class ChipTodoApp {
     
     Object.entries(tasksByAssignee).forEach(([assigneeId, memberTasks]) => {
       const member = members.find(m => m.id === assigneeId);
-      const memberName = member ? member.name : '未分配';
+      const memberName = member ? member.name : (tasks[0]?.assigneeName || '未分配');
       const memberColor = member ? member.color : '#6B7280';
       
       html += `
@@ -943,79 +960,386 @@ class ChipTodoApp {
     });
   }
 
+  cloneMeetingDraftValue(value) {
+    return JSON.parse(JSON.stringify(value || null));
+  }
+
+  createMeetingDraft(meeting = null) {
+    const baseMeeting = meeting ? this.cloneMeetingDraftValue(meeting) : null;
+    const tasks = (baseMeeting?.tasks || [])
+      .map((task) => store.normalizeMeetingTask(task))
+      .filter(Boolean);
+    const attendees = Array.from(new Set([
+      ...(baseMeeting?.attendees || []),
+      ...tasks.map((task) => task.assignee).filter(Boolean)
+    ])).filter((attendeeId) => attendeeId !== 'unassigned');
+
+    return {
+      id: baseMeeting?.id || null,
+      title: String(baseMeeting?.title || '周会').trim() || '周会',
+      attendees,
+      notes: String(baseMeeting?.notes || ''),
+      taskReports: this.cloneMeetingDraftValue(baseMeeting?.taskReports || {}),
+      tasks,
+      createdAt: baseMeeting?.createdAt || new Date().toISOString(),
+      updatedAt: baseMeeting?.updatedAt || null
+    };
+  }
+
+  getMeetingDraft() {
+    if (this.currentMeetingId) {
+      const storedMeeting = store.getMeeting(this.currentMeetingId);
+      if (!storedMeeting) {
+        this.currentMeetingId = null;
+        this.meetingDraft = this.createMeetingDraft();
+      } else if (!this.meetingDraft || this.meetingDraft.id !== this.currentMeetingId) {
+        this.meetingDraft = this.createMeetingDraft(storedMeeting);
+      }
+    } else if (!this.meetingDraft) {
+      this.meetingDraft = this.createMeetingDraft();
+    }
+
+    return this.meetingDraft;
+  }
+
+  formatMeetingDateTime(value) {
+    if (!value) return '未记录';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
+
+  sanitizeMeetingFilename(name) {
+    return String(name || 'meeting-report')
+      .trim()
+      .replace(/[<>:"/\\|?*]+/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'meeting-report';
+  }
+
+  collectMeetingDraftFromDom(options = {}) {
+    const { persistTaskUpdates = false } = options;
+    const container = Utils.$('#meetingView');
+    const draft = this.createMeetingDraft(this.getMeetingDraft());
+
+    if (!container || container.classList.contains('hidden')) {
+      this.meetingDraft = draft;
+      return draft;
+    }
+
+    draft.title = String(Utils.$('#meetingTitle')?.value || draft.title || '周会').trim() || '周会';
+    draft.notes = Utils.$('#meetingNotes')?.value || '';
+    draft.attendees = Utils.$$('.meeting-member-group', container)
+      .map((group) => group.dataset.assigneeId)
+      .filter((attendeeId) => attendeeId && attendeeId !== 'unassigned');
+
+    const taskReports = {};
+    const tasks = [];
+
+    Utils.$$('.meeting-task-item', container).forEach((taskEl) => {
+      const taskId = taskEl.dataset.taskId;
+      const storedTask = store.data.tasks.find((item) => item.id === taskId) || null;
+      const assigneeId = taskEl.dataset.assigneeId || storedTask?.assignee || '';
+      const projectId = taskEl.dataset.projectId || storedTask?.projectId || '';
+      const priority = taskEl.dataset.priority || storedTask?.priority || 'medium';
+      const progress = Math.min(100, Math.max(0, parseInt(taskEl.querySelector('.task-progress-input')?.value || '0', 10) || 0));
+      const work = taskEl.querySelector('.task-work')?.value || '';
+      const issues = taskEl.querySelector('.task-issues')?.value || '';
+      const taskName = taskEl.querySelector('.task-name')?.textContent?.trim() || storedTask?.name || '未命名任务';
+      const projectName = taskEl.querySelector('.task-project')?.textContent?.trim()
+        || store.getProject(projectId)?.name
+        || '未指定项目';
+      const nextStatus = progress >= 100
+        ? 'completed'
+        : (storedTask?.status === 'paused' ? 'paused' : 'in_progress');
+
+      if (persistTaskUpdates && storedTask) {
+        store.updateTask(taskId, {
+          progress,
+          status: nextStatus
+        });
+      }
+
+      const latestTask = persistTaskUpdates && storedTask
+        ? store.data.tasks.find((item) => item.id === taskId) || storedTask
+        : storedTask;
+
+      tasks.push(latestTask
+        ? {
+            ...store.createMeetingTaskSnapshot(latestTask),
+            progress,
+            status: nextStatus
+          }
+        : {
+            id: taskId,
+            projectId,
+            projectName,
+            name: taskName,
+            assignee: assigneeId,
+            assigneeName: store.data.members.find((item) => item.id === assigneeId)?.name || '未分配',
+            priority,
+            progress,
+            status: nextStatus
+          });
+
+      if (work || issues) {
+        taskReports[taskId] = {
+          work,
+          issues,
+          plan: draft.taskReports?.[taskId]?.plan || '',
+          updatedAt: new Date().toISOString()
+        };
+      }
+    });
+
+    draft.tasks = tasks;
+    draft.taskReports = taskReports;
+    draft.attendees = Array.from(new Set([
+      ...draft.attendees,
+      ...tasks.map((task) => task.assignee).filter(Boolean)
+    ])).filter((attendeeId) => attendeeId && attendeeId !== 'unassigned');
+
+    this.meetingDraft = draft;
+    return draft;
+  }
+
+  openMeetingAttendeeModal() {
+    const draft = this.collectMeetingDraftFromDom();
+    const selectedIds = new Set(draft.attendees || []);
+    const members = store.data.members;
+    const modalContent = Utils.createElement('div', { class: 'meeting-selector-modal' });
+
+    modalContent.innerHTML = `
+      <div class="modal-header">
+        <h2>${Utils.icon('user')} 导入参会人员</h2>
+        <button class="btn btn-icon close-btn">${Utils.icon('close')}</button>
+      </div>
+      <div class="meeting-selector-body">
+        <p class="meeting-selector-hint">从成员库中选择本次会议参会人员，已导入任务的成员会保留在会议记录中。</p>
+        <div class="meeting-selector-actions">
+          <button type="button" class="btn btn-secondary btn-small" data-select="all">导入全部成员</button>
+          <button type="button" class="btn btn-secondary btn-small" data-select="none">清空选择</button>
+        </div>
+        <div class="member-select-list">
+          ${members.length === 0
+            ? '<p class="empty">暂无成员，先到管理页添加成员。</p>'
+            : members.map((member) => `
+                <label class="member-select-item">
+                  <input type="checkbox" name="meetingAttendeeSelection" value="${member.id}" ${selectedIds.has(member.id) ? 'checked' : ''}>
+                  <span class="member-avatar" style="background:${member.color}">${member.name[0]}</span>
+                  <span>${Utils.escapeHtml(member.name)}</span>
+                  <span class="role-badge">${Utils.escapeHtml(member.role || '成员')}</span>
+                </label>
+              `).join('')}
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary cancel-btn">取消</button>
+        <button type="button" class="btn btn-primary confirm-btn" ${members.length === 0 ? 'disabled' : ''}>确认导入</button>
+      </div>
+    `;
+
+    const overlay = Utils.showModal(modalContent);
+    const cleanup = () => overlay.remove();
+
+    modalContent.querySelector('.close-btn')?.addEventListener('click', cleanup);
+    modalContent.querySelector('.cancel-btn')?.addEventListener('click', cleanup);
+    modalContent.querySelector('[data-select="all"]')?.addEventListener('click', () => {
+      Utils.$$('input[name="meetingAttendeeSelection"]', modalContent).forEach((input) => {
+        input.checked = true;
+      });
+    });
+    modalContent.querySelector('[data-select="none"]')?.addEventListener('click', () => {
+      Utils.$$('input[name="meetingAttendeeSelection"]', modalContent).forEach((input) => {
+        input.checked = false;
+      });
+    });
+    modalContent.querySelector('.confirm-btn')?.addEventListener('click', () => {
+      const nextAttendees = Utils.$$('input[name="meetingAttendeeSelection"]:checked', modalContent)
+        .map((input) => input.value);
+      const attendeeSet = new Set(nextAttendees);
+      draft.attendees = nextAttendees;
+      draft.tasks = draft.tasks.filter((task) => attendeeSet.has(task.assignee));
+      draft.taskReports = Object.fromEntries(
+        Object.entries(draft.taskReports || {}).filter(([taskId]) => draft.tasks.some((task) => task.id === taskId))
+      );
+      this.meetingDraft = this.createMeetingDraft(draft);
+      cleanup();
+      this.renderMeeting();
+    });
+  }
+
+  openMeetingTaskImportModal(memberId) {
+    const draft = this.collectMeetingDraftFromDom();
+    const member = store.data.members.find((item) => item.id === memberId) || null;
+    if (!member) {
+      alert('该成员不存在，无法导入任务');
+      return;
+    }
+
+    const currentTaskIds = new Set((draft.tasks || []).map((task) => task.id));
+    const availableTasks = store.getUnfinishedTasksByMember(memberId)
+      .filter((task) => !currentTaskIds.has(task.id));
+    const modalContent = Utils.createElement('div', { class: 'meeting-selector-modal' });
+
+    modalContent.innerHTML = `
+      <div class="modal-header">
+        <h2>${Utils.icon('download')} 导入任务</h2>
+        <button class="btn btn-icon close-btn">${Utils.icon('close')}</button>
+      </div>
+      <div class="meeting-selector-body">
+        <p class="meeting-selector-hint">选择 ${Utils.escapeHtml(member.name)} 当前未完成的任务导入会议记录。暂停中的任务也会出现在这里。</p>
+        <div class="task-select-list">
+          ${availableTasks.length === 0
+            ? '<p class="empty">该成员当前没有可导入的未完成任务。</p>'
+            : availableTasks.map((task) => {
+                const project = store.getProject(task.projectId);
+                const projectName = project ? project.name : '未指定项目';
+                return `
+                  <label class="task-select-item">
+                    <input type="checkbox" value="${task.id}">
+                    <span class="task-select-name">${Utils.escapeHtml(task.name)}</span>
+                    <span class="task-select-project">${Utils.escapeHtml(projectName)}</span>
+                    <span class="task-select-progress" style="color: ${this.getProgressColor(task.progress || 0)}">${task.progress || 0}%</span>
+                  </label>
+                `;
+              }).join('')}
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary cancel-btn">取消</button>
+        <button type="button" class="btn btn-primary confirm-btn" ${availableTasks.length === 0 ? 'disabled' : ''}>确认导入</button>
+      </div>
+    `;
+
+    const overlay = Utils.showModal(modalContent);
+    const cleanup = () => overlay.remove();
+
+    modalContent.querySelector('.close-btn')?.addEventListener('click', cleanup);
+    modalContent.querySelector('.cancel-btn')?.addEventListener('click', cleanup);
+    modalContent.querySelector('.confirm-btn')?.addEventListener('click', () => {
+      const selectedTaskIds = Utils.$$('input[type="checkbox"]:checked', modalContent).map((input) => input.value);
+      if (selectedTaskIds.length === 0) {
+        cleanup();
+        return;
+      }
+
+      const selectedTasks = availableTasks
+        .filter((task) => selectedTaskIds.includes(task.id))
+        .map((task) => store.createMeetingTaskSnapshot(task));
+      draft.tasks = [
+        ...draft.tasks,
+        ...selectedTasks
+      ];
+      this.meetingDraft = this.createMeetingDraft(draft);
+      cleanup();
+      this.renderMeeting();
+    });
+  }
+
+  renderMeetingTaskItem(task, taskReport = {}) {
+    const priorityLabels = { low: '低', medium: '中', high: '高' };
+    const priorityIcons = {
+      low: Utils.icon('arrowDown'),
+      medium: Utils.icon('minus'),
+      high: Utils.icon('arrowUp')
+    };
+    const priority = task.priority || 'medium';
+
+    return `
+      <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assignee || ''}" data-project-id="${task.projectId || ''}" data-priority="${priority}">
+        <div class="task-item-header">
+          <span class="task-project">${Utils.escapeHtml(task.projectName || '未指定项目')}</span>
+          <span class="task-sep">|</span>
+          <span class="task-name">${Utils.escapeHtml(task.name)}</span>
+          <span class="task-sep">|</span>
+          <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
+          <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="移出会议记录">${Utils.icon('trash')}</button>
+        </div>
+        <div class="task-progress-slider">
+          <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
+          <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
+        </div>
+        <div class="task-report-fields">
+          <div class="report-field">
+            <label>${Utils.icon('check')} 进展记录</label>
+            <textarea class="task-work" placeholder="记录本次会议同步到的进展...">${Utils.escapeHtml(taskReport.work || '')}</textarea>
+          </div>
+          <div class="report-field">
+            <label>${Utils.icon('alertCircle')} 阻塞问题</label>
+            <textarea class="task-issues" placeholder="记录风险、问题和需要协调的事项...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   renderMeeting() {
     const container = Utils.$('#meetingView');
-    const week = this.meetingWeek || store.data.currentWeek;
-    const year = this.meetingYear || store.data.currentYear;
-    
-    this.meetingWeek = week;
-    this.meetingYear = year;
-    
-    const meeting = store.getMeeting(week, year);
+    const draft = this.getMeetingDraft();
     const members = store.data.members;
-    const tasksByAssignee = store.getTasksByAssignee(week, year);
-    const weekRange = Utils.getWeekRange(week, year);
-    const meetingsList = store.getMeetingsList();
-    
-    const attendeeList = members.map(m => `
-      <span class="attendee-item" title="${Utils.escapeHtml(m.name)}">
-        <span class="member-avatar" style="background:${m.color}">${m.name[0]}</span>
-      </span>
-    `).join('');
-    
+    const meetingsList = store.getMeetingsList({
+      query: this.meetingSearchQuery,
+      startDate: this.meetingSearchStartDate,
+      endDate: this.meetingSearchEndDate
+    });
+    const hasSearchFilters = Boolean(this.meetingSearchQuery || this.meetingSearchStartDate || this.meetingSearchEndDate);
+    const tasksByAssignee = store.groupMeetingTasksByAssignee(draft.tasks || []);
+    const attendeeIds = Array.from(new Set([
+      ...(draft.attendees || []),
+      ...Object.keys(tasksByAssignee)
+    ]));
+
+    const attendeeCards = (draft.attendees || []).length === 0
+      ? '<p class="empty">暂无参会人员，可通过“导入参会人员”选择成员。</p>'
+      : draft.attendees.map((attendeeId) => {
+          const member = members.find((item) => item.id === attendeeId) || null;
+          const fallbackTask = tasksByAssignee[attendeeId]?.[0] || null;
+          const memberName = member ? member.name : (fallbackTask?.assigneeName || '未知成员');
+          const memberColor = member ? member.color : '#6B7280';
+          const memberRole = member?.role || '成员';
+          return `
+            <div class="meeting-attendee-card" data-member-id="${attendeeId}">
+              <span class="member-avatar" style="background:${memberColor}">${memberName[0]}</span>
+              <div class="meeting-attendee-info">
+                <strong>${Utils.escapeHtml(memberName)}</strong>
+                <span>${Utils.escapeHtml(memberRole)}</span>
+              </div>
+              <button class="btn btn-icon btn-small remove-attendee-btn" data-attendee-id="${attendeeId}" title="移出参会人员">${Utils.icon('close')}</button>
+            </div>
+          `;
+        }).join('');
+
     let tasksHtml = '';
-    Object.entries(tasksByAssignee).forEach(([assigneeId, tasks]) => {
-      const member = members.find(m => m.id === assigneeId);
-      const memberName = member ? member.name : '未分配';
+    attendeeIds.forEach((assigneeId) => {
+      const tasks = tasksByAssignee[assigneeId] || [];
+      const member = members.find((item) => item.id === assigneeId) || null;
+      const fallbackTask = tasks[0] || null;
+      const memberName = member ? member.name : (fallbackTask?.assigneeName || '未分配');
       const memberColor = member ? member.color : '#6B7280';
-      
-      const priorityLabels = { low: '低', medium: '中', high: '高' };
-      const priorityIcons = { 
-        low: Utils.icon('arrowDown'), 
-        medium: Utils.icon('minus'), 
-        high: Utils.icon('arrowUp') 
-      };
-      
-      const taskItems = tasks.map(task => {
-        const project = store.data.projects.find(p => p.id === task.projectId);
-        const projectName = project ? project.name : '未指定项目';
-        const taskReport = meeting?.taskReports?.[task.id] || {};
-        const priority = task.priority || 'medium';
-        
-        return `
-          <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assigneeId || ''}">
-            <div class="task-item-header">
-              <span class="task-project">${Utils.escapeHtml(projectName)}</span>
-              <span class="task-sep">|</span>
-              <span class="task-name">${Utils.escapeHtml(task.name)}</span>
-              <span class="task-sep">|</span>
-              <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
-              <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="删除记录">${Utils.icon('trash')}</button>
-            </div>
-            <div class="task-progress-slider">
-              <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
-              <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
-            </div>
-            <div class="task-report-fields">
-              <div class="report-field">
-                <label>${Utils.icon('check')} 本周工作</label>
-                <textarea class="task-work" placeholder="本周完成了什么工作...">${Utils.escapeHtml(taskReport.work || '')}</textarea>
-              </div>
-              <div class="report-field">
-                <label>${Utils.icon('alertCircle')} 遇到问题</label>
-                <textarea class="task-issues" placeholder="遇到什么困难或问题...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
+      const taskItems = tasks.length === 0
+        ? '<p class="empty-inline">暂无已导入任务，可点击“导入任务”带入未完成事项。</p>'
+        : tasks.map((task) => this.renderMeetingTaskItem(task, draft.taskReports?.[task.id] || {})).join('');
+      const importTaskButton = assigneeId === 'unassigned'
+        ? ''
+        : `<button class="btn btn-small btn-outline import-task-btn" data-assignee-id="${assigneeId}" data-member-name="${Utils.escapeHtml(memberName)}">${Utils.icon('download')} 导入任务</button>`;
+
       tasksHtml += `
         <div class="meeting-member-group" data-assignee-id="${assigneeId}">
           <div class="meeting-member-header">
             <span class="member-avatar" style="background:${memberColor}">${memberName[0]}</span>
             <span class="member-name">${Utils.escapeHtml(memberName)}</span>
-            <button class="btn btn-small btn-outline add-task-btn" data-assignee-id="${assigneeId}" data-member-name="${Utils.escapeHtml(memberName)}">${Utils.icon('plus')} 添加任务</button>
+            ${importTaskButton}
           </div>
           <div class="meeting-tasks">
             ${taskItems}
@@ -1023,390 +1347,388 @@ class ChipTodoApp {
         </div>
       `;
     });
-    
-    if (Object.keys(tasksByAssignee).length === 0) {
-      tasksHtml = '<p class="empty">本周暂无未完成任务</p>';
+
+    if (attendeeIds.length === 0) {
+      tasksHtml = '<p class="empty">先导入参会人员，再按人导入未完成任务进行会议记录。</p>';
     }
-    
-    const historyItems = meetingsList.slice(0, 10).map(m => `
-      <div class="history-item ${m.weekKey === store.getWeekKey(week, year) ? 'active' : ''}" data-week="${m.week}" data-year="${m.year}">
-        <span class="history-week">${m.year}年第${m.week}周</span>
-        <span class="history-date">${m.date}</span>
+
+    const historyItems = meetingsList.map((meeting) => `
+      <div class="history-item ${meeting.id === this.currentMeetingId ? 'active' : ''}" data-meeting-id="${meeting.id}">
+        <div class="history-item-top">
+          <span class="history-week">${Utils.escapeHtml(meeting.title || '周会')}</span>
+          <span class="history-date">${this.formatMeetingDateTime(meeting.createdAt)}</span>
+        </div>
+        <div class="history-item-meta">${meeting.attendeeCount}人 · ${meeting.taskCount}项任务</div>
+        <div class="history-item-note">${Utils.escapeHtml(meeting.notes || '暂无备注')}</div>
       </div>
     `).join('');
-    
+
     container.innerHTML = `
       <div class="meeting-page">
         <div class="meeting-sidebar">
-          <h3>${Utils.icon('document')} 历史会议</h3>
+          <div class="meeting-sidebar-header">
+            <h3>${Utils.icon('document')} 查询会议</h3>
+            <button class="btn btn-primary btn-small" id="newMeetingBtn">${Utils.icon('plus')} 新建会议</button>
+          </div>
+          <form class="meeting-search-form" id="meetingSearchForm">
+            <input type="search" id="meetingSearchInput" value="${Utils.escapeHtml(this.meetingSearchQuery)}" placeholder="按主题、参会人、备注查询会议">
+            <div class="meeting-search-range">
+              <label class="meeting-search-date">
+                <span>开始日期</span>
+                <input type="date" id="meetingSearchStartDate" value="${Utils.escapeHtml(this.meetingSearchStartDate)}">
+              </label>
+              <label class="meeting-search-date">
+                <span>结束日期</span>
+                <input type="date" id="meetingSearchEndDate" value="${Utils.escapeHtml(this.meetingSearchEndDate)}">
+              </label>
+            </div>
+            <div class="meeting-search-actions">
+              <button type="submit" class="btn btn-secondary btn-small">查询</button>
+              <button type="button" class="btn btn-secondary btn-small" id="meetingSearchClearBtn">清空</button>
+            </div>
+          </form>
           <div class="meeting-history-list">
-            ${historyItems || '<p class="empty">暂无历史会议</p>'}
+            ${historyItems || `<p class="empty">${hasSearchFilters ? '没有匹配的会议记录' : '暂无会议记录'}</p>`}
           </div>
         </div>
-        
+
         <div class="meeting-main">
           <div class="page-header">
-            <div class="week-nav">
-              <button class="btn btn-icon" id="prevMeetingWeek">${Utils.icon('chevronLeft')}</button>
-              <span class="current-week" id="meetingWeekDisplay">第${week}周 (${weekRange})</span>
-              <button class="btn btn-icon" id="nextMeetingWeek">${Utils.icon('chevronRight')}</button>
+            <div>
+              <h2>${draft.id ? '编辑会议' : '新建会议'}</h2>
+              <p class="meeting-meta">创建时间：${this.formatMeetingDateTime(draft.createdAt)}${draft.updatedAt ? ` · 最近保存：${this.formatMeetingDateTime(draft.updatedAt)}` : ''}</p>
             </div>
             <div class="meeting-actions">
-              <button class="btn btn-secondary" id="generateReportBtn">${Utils.icon('chart')} 生成报告</button>
+              ${draft.id ? `<button class="btn btn-danger" id="deleteMeetingBtn">${Utils.icon('trash')} 删除会议</button>` : ''}
+              <button class="btn btn-secondary" id="exportMeetingHtmlBtn">${Utils.icon('download')} 导出HTML报告</button>
               <button class="btn btn-primary" id="saveMeetingBtn">${Utils.icon('check')} 保存会议</button>
             </div>
           </div>
-          
-          <div class="meeting-form">
+
+          <div class="meeting-form meeting-form-grid">
             <div class="form-group">
-              <label>会议日期</label>
-              <input type="date" id="meetingDate" value="${meeting?.date || new Date().toISOString().split('T')[0]}">
+              <label>会议主题</label>
+              <input type="text" id="meetingTitle" value="${Utils.escapeHtml(draft.title || '周会')}" placeholder="例如：周会 / 项目评审 / 问题复盘">
             </div>
-            
             <div class="form-group">
-              <label>参会人员</label>
-              <div class="attendees-list">
-                ${attendeeList}
+              <label>会议创建时间</label>
+              <input type="text" id="meetingCreatedAt" value="${this.formatMeetingDateTime(draft.createdAt)}" readonly>
+            </div>
+            <div class="form-group form-group-full">
+              <div class="meeting-section-header">
+                <label>参会人员</label>
+                <div class="meeting-section-actions">
+                  <button type="button" class="btn btn-secondary btn-small" id="importAttendeesBtn">${Utils.icon('user')} 导入参会人员</button>
+                  <button type="button" class="btn btn-secondary btn-small" id="clearAttendeesBtn" ${(draft.attendees || []).length === 0 ? 'disabled' : ''}>清空</button>
+                </div>
+              </div>
+              <div class="meeting-attendee-cards">
+                ${attendeeCards}
               </div>
             </div>
-            
-            <div class="form-group">
+            <div class="form-group form-group-full">
               <label>会议备注</label>
-              <textarea id="meetingNotes" placeholder="会议讨论内容、决策事项等...">${meeting?.notes || ''}</textarea>
+              <textarea id="meetingNotes" placeholder="记录会议结论、决议、待办和需要跟进的事项...">${Utils.escapeHtml(draft.notes || '')}</textarea>
             </div>
           </div>
-          
+
           <div class="meeting-tasks-section">
-            <h3>${Utils.icon('document')} 任务进展记录 (${Object.values(tasksByAssignee).flat().length}项)</h3>
-            <p class="meeting-hint">为每个任务记录：本周工作内容、遇到的问题</p>
+            <div class="meeting-section-header">
+              <h3>${Utils.icon('document')} 任务进展记录 (${(draft.tasks || []).length}项)</h3>
+            </div>
+            <p class="meeting-hint">每位参会人员可以导入自己当前未完成的任务，在会议过程中记录进展并直接调整进度。</p>
             <div class="meeting-tasks-list">
               ${tasksHtml}
             </div>
           </div>
         </div>
       </div>
-      
-      <div id="taskSelectModal" class="task-select-modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>选择任务 - <span id="modalMemberName"></span></h3>
-            <button class="btn btn-icon modal-close" id="closeTaskModal">${Utils.icon('x')}</button>
-          </div>
-          <div class="modal-body">
-            <div id="taskSelectList" class="task-select-list"></div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" id="cancelTaskModal">取消</button>
-            <button class="btn btn-primary" id="confirmTaskModal">添加选中任务</button>
-          </div>
-        </div>
-      </div>
     `;
-    
-    Utils.$('#saveMeetingBtn')?.addEventListener('click', () => {
-      const date = Utils.$('#meetingDate').value;
-      const notes = Utils.$('#meetingNotes').value;
-      
-      const attendees = [];
-      
-      Utils.$$('.meeting-task-item').forEach(taskEl => {
-        const taskId = taskEl.dataset.taskId;
-        const assigneeId = taskEl.dataset.assigneeId;
-        const work = taskEl.querySelector('.task-work')?.value || '';
-        const issues = taskEl.querySelector('.task-issues')?.value || '';
-        const progress = parseInt(taskEl.querySelector('.task-progress-input')?.value || '0', 10);
 
-        store.updateTaskReport(week, year, taskId, { work, issues });
-        
-        if (assigneeId && (work || issues)) {
-          if (!attendees.includes(assigneeId)) {
-            attendees.push(assigneeId);
-          }
-        }
-        
-        store.updateTask(taskId, { progress });
-      });
-      
-      store.saveMeeting(week, year, { date, notes, attendees });
-      
-      alert('会议记录已保存！');
+    Utils.$('#meetingSearchForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const nextStartDate = Utils.$('#meetingSearchStartDate')?.value || '';
+      const nextEndDate = Utils.$('#meetingSearchEndDate')?.value || '';
+
+      if (nextStartDate && nextEndDate && nextStartDate > nextEndDate) {
+        alert('开始日期不能晚于结束日期');
+        return;
+      }
+
+      this.meetingSearchQuery = Utils.$('#meetingSearchInput')?.value?.trim() || '';
+      this.meetingSearchStartDate = nextStartDate;
+      this.meetingSearchEndDate = nextEndDate;
       this.renderMeeting();
     });
-    
-    Utils.$('#generateReportBtn')?.addEventListener('click', () => {
-      this.showMeetingReport(week, year);
+
+    Utils.$('#meetingSearchClearBtn')?.addEventListener('click', () => {
+      this.meetingSearchQuery = '';
+      this.meetingSearchStartDate = '';
+      this.meetingSearchEndDate = '';
+      this.renderMeeting();
     });
-    
-    let currentAddTaskMemberId = null;
-    const existingTaskIds = new Set(Object.values(tasksByAssignee).flat().map(t => t.id));
-    
-    Utils.$$('.add-task-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        currentAddTaskMemberId = btn.dataset.assigneeId;
-        const memberName = btn.dataset.memberName;
-        
-        const allTasks = store.getUnfinishedTasksByMember(currentAddTaskMemberId);
-        const availableTasks = allTasks.filter(t => !existingTaskIds.has(t.id));
-        
-        const modal = Utils.$('#taskSelectModal');
-        const taskList = Utils.$('#taskSelectList');
-        Utils.$('#modalMemberName').textContent = memberName;
-        
-        if (availableTasks.length === 0) {
-          taskList.innerHTML = '<p class="empty">该成员没有未完成的任务</p>';
-        } else {
-          taskList.innerHTML = availableTasks.map(task => {
-            const project = store.data.projects.find(p => p.id === task.projectId);
-            const projectName = project ? project.name : '未指定项目';
-            return `
-              <label class="task-select-item">
-                <input type="checkbox" value="${task.id}">
-                <span class="task-select-name">${Utils.escapeHtml(task.name)}</span>
-                <span class="task-select-project">${Utils.escapeHtml(projectName)}</span>
-                <span class="task-select-progress" style="color: ${this.getProgressColor(task.progress || 0)}">${task.progress || 0}%</span>
-              </label>
-            `;
-          }).join('');
-        }
-        
-        modal.classList.remove('hidden');
+
+    Utils.$('#newMeetingBtn')?.addEventListener('click', () => {
+      this.currentMeetingId = null;
+      this.meetingDraft = this.createMeetingDraft();
+      this.renderMeeting();
+    });
+
+    Utils.$('#importAttendeesBtn')?.addEventListener('click', () => {
+      this.openMeetingAttendeeModal();
+    });
+
+    Utils.$('#clearAttendeesBtn')?.addEventListener('click', async () => {
+      const confirmed = await Utils.confirm('确定要清空当前会议中的参会人员和已导入任务吗？');
+      if (!confirmed) return;
+      const draftData = this.collectMeetingDraftFromDom();
+      draftData.attendees = [];
+      draftData.tasks = [];
+      draftData.taskReports = {};
+      this.meetingDraft = this.createMeetingDraft(draftData);
+      this.renderMeeting();
+    });
+
+    Utils.$$('#saveMeetingBtn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const draftData = this.collectMeetingDraftFromDom({ persistTaskUpdates: true });
+        const isNewMeeting = !draftData.id;
+        const savedMeeting = store.saveMeeting(draftData);
+        this.currentMeetingId = savedMeeting.id;
+        this.meetingDraft = this.createMeetingDraft(savedMeeting);
+        alert(isNewMeeting ? '会议已创建并保存！' : '会议记录已保存！');
+        this.renderMeeting();
       });
     });
-    
-    Utils.$('#closeTaskModal')?.addEventListener('click', () => {
-      Utils.$('#taskSelectModal').classList.add('hidden');
+
+    Utils.$('#deleteMeetingBtn')?.addEventListener('click', async () => {
+      const draftData = this.collectMeetingDraftFromDom();
+      if (!draftData.id) return;
+
+      const confirmed = await Utils.confirm(`确定要删除会议“${draftData.title || '周会'}”吗？该操作不可恢复。`);
+      if (!confirmed) return;
+
+      store.deleteMeeting(draftData.id);
+      this.currentMeetingId = null;
+      this.meetingDraft = this.createMeetingDraft();
+      alert('会议已删除');
+      this.renderMeeting();
     });
-    
-    Utils.$('#cancelTaskModal')?.addEventListener('click', () => {
-      Utils.$('#taskSelectModal').classList.add('hidden');
+
+    Utils.$('#exportMeetingHtmlBtn')?.addEventListener('click', () => {
+      this.exportMeetingHtmlReport();
     });
-    
-    Utils.$('.modal-backdrop')?.addEventListener('click', () => {
-      Utils.$('#taskSelectModal').classList.add('hidden');
+
+    Utils.$$('.history-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const meetingId = item.dataset.meetingId;
+        const meeting = store.getMeeting(meetingId);
+        if (!meeting) return;
+        this.currentMeetingId = meetingId;
+        this.meetingDraft = this.createMeetingDraft(meeting);
+        this.renderMeeting();
+      });
     });
-    
-    Utils.$('#confirmTaskModal')?.addEventListener('click', () => {
-      const selectedCheckboxes = Utils.$$('#taskSelectList input[type="checkbox"]:checked');
-      const selectedTaskIds = Array.from(selectedCheckboxes).map(cb => cb.value);
-      
-      if (selectedTaskIds.length > 0) {
-        const memberGroup = Utils.$(`.meeting-member-group[data-assignee-id="${currentAddTaskMemberId}"]`);
-        const tasksContainer = memberGroup?.querySelector('.meeting-tasks');
-        
-        const priorityLabels = { low: '低', medium: '中', high: '高' };
-        const priorityIcons = { 
-          low: Utils.icon('arrowDown'), 
-          medium: Utils.icon('minus'), 
-          high: Utils.icon('arrowUp') 
-        };
-        
-        selectedTaskIds.forEach(taskId => {
-          const task = store.data.tasks.find(t => t.id === taskId);
-          if (!task) return;
-          
-          const project = store.data.projects.find(p => p.id === task.projectId);
-          const projectName = project ? project.name : '未指定项目';
-          const meeting = store.getMeeting(week, year);
-          const taskReport = meeting?.taskReports?.[task.id] || {};
-          const priority = task.priority || 'medium';
-          
-          const taskHtml = `
-            <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assignee || ''}">
-              <div class="task-item-header">
-                <span class="task-project">${Utils.escapeHtml(projectName)}</span>
-                <span class="task-sep">|</span>
-                <span class="task-name">${Utils.escapeHtml(task.name)}</span>
-                <span class="task-sep">|</span>
-                <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
-                <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="删除记录">${Utils.icon('trash')}</button>
-              </div>
-              <div class="task-progress-slider">
-                <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
-                <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
-              </div>
-              <div class="task-report-fields">
-                <div class="report-field">
-                  <label>${Utils.icon('check')} 本周工作</label>
-                  <textarea class="task-work" placeholder="本周完成了什么工作...">${Utils.escapeHtml(taskReport.work || '')}</textarea>
-                </div>
-                <div class="report-field">
-                  <label>${Utils.icon('alertCircle')} 遇到问题</label>
-                  <textarea class="task-issues" placeholder="遇到什么困难或问题...">${Utils.escapeHtml(taskReport.issues || '')}</textarea>
-                </div>
-              </div>
-            </div>
-          `;
-          
-          tasksContainer.insertAdjacentHTML('beforeend', taskHtml);
-        });
-        
-        Utils.$('#taskSelectModal').classList.add('hidden');
-        
-        Utils.$$('.meeting-tasks .meeting-task-item:last-child .task-progress-input').forEach(slider => {
-          slider.addEventListener('input', (e) => {
-            const valueSpan = e.target.closest('.task-progress-slider').querySelector('.progress-value');
-            valueSpan.textContent = e.target.value;
-          });
-        });
-      } else {
-        Utils.$('#taskSelectModal').classList.add('hidden');
-      }
+
+    Utils.$$('.remove-attendee-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const attendeeId = btn.dataset.attendeeId;
+        const confirmed = await Utils.confirm('移出该参会人员后，ta 已导入的任务也会从当前会议中移除，是否继续？');
+        if (!confirmed) return;
+        const draftData = this.collectMeetingDraftFromDom();
+        draftData.attendees = draftData.attendees.filter((id) => id !== attendeeId);
+        draftData.tasks = draftData.tasks.filter((task) => task.assignee !== attendeeId);
+        draftData.taskReports = Object.fromEntries(
+          Object.entries(draftData.taskReports || {}).filter(([taskId]) => draftData.tasks.some((task) => task.id === taskId))
+        );
+        this.meetingDraft = this.createMeetingDraft(draftData);
+        this.renderMeeting();
+      });
     });
-    
-    Utils.$$('.task-progress-input').forEach(slider => {
+
+    Utils.$$('.import-task-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.openMeetingTaskImportModal(btn.dataset.assigneeId);
+      });
+    });
+
+    Utils.$$('.task-progress-input').forEach((slider) => {
       slider.addEventListener('input', (e) => {
         const valueSpan = e.target.closest('.task-progress-slider').querySelector('.progress-value');
         valueSpan.textContent = e.target.value;
       });
     });
-    
-    Utils.$$('.remove-task-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+
+    Utils.$$('.remove-task-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const taskItem = btn.closest('.meeting-task-item');
-        const taskId = taskItem.dataset.taskId;
         const taskName = taskItem.querySelector('.task-name')?.textContent || '该任务';
-        
-        if (confirm(`确定要从会议记录中删除"${taskName}"吗？\n（不会删除任务本身，只删除会议中的进展记录）`)) {
-          taskItem.remove();
-        }
-      });
-    });
-    
-    Utils.$('#prevMeetingWeek')?.addEventListener('click', () => {
-      let w = this.meetingWeek;
-      let y = this.meetingYear;
-      w--;
-      if (w < 1) {
-        y--;
-        w = Utils.getWeeksInYear(y);
-      }
-      this.meetingWeek = w;
-      this.meetingYear = y;
-      this.renderMeeting();
-    });
-    
-    Utils.$('#nextMeetingWeek')?.addEventListener('click', () => {
-      let w = this.meetingWeek;
-      let y = this.meetingYear;
-      w++;
-      if (w > Utils.getWeeksInYear(y)) {
-        w = 1;
-        y++;
-      }
-      this.meetingWeek = w;
-      this.meetingYear = y;
-      this.renderMeeting();
-    });
-    
-    Utils.$$('.history-item').forEach(item => {
-      item.addEventListener('click', () => {
-        this.meetingWeek = parseInt(item.dataset.week);
-        this.meetingYear = parseInt(item.dataset.year);
+        const confirmed = await Utils.confirm(`确定要将“${taskName}”从当前会议中移除吗？`);
+        if (!confirmed) return;
+
+        const draftData = this.collectMeetingDraftFromDom();
+        const taskId = taskItem.dataset.taskId;
+        draftData.tasks = draftData.tasks.filter((task) => task.id !== taskId);
+        delete draftData.taskReports[taskId];
+        this.meetingDraft = this.createMeetingDraft(draftData);
         this.renderMeeting();
       });
     });
   }
 
-  showMeetingReport(week, year) {
-    const meeting = store.getMeeting(week, year);
-    const members = store.data.members;
-    const tasksByAssignee = store.getTasksByAssignee(week, year);
-    const weekRange = Utils.getWeekRange(week, year);
-    
-    if (!meeting) {
-      alert('请先保存会议记录');
-      return;
+  buildMeetingHtmlReport(meeting) {
+    const normalizedMeeting = this.createMeetingDraft(meeting);
+    const attendeeNames = normalizedMeeting.attendees
+      .map((attendeeId) => store.data.members.find((member) => member.id === attendeeId)?.name || '未知成员')
+      .join('、') || '无';
+    const tasksByAssignee = store.groupMeetingTasksByAssignee(normalizedMeeting.tasks || []);
+
+    const taskSections = Object.entries(tasksByAssignee).map(([assigneeId, tasks]) => {
+      const member = store.data.members.find((item) => item.id === assigneeId) || null;
+      const memberName = member ? member.name : (tasks[0]?.assigneeName || '未分配');
+      const taskRows = tasks.map((task) => {
+        const taskReport = normalizedMeeting.taskReports?.[task.id] || {};
+        return `
+          <tr>
+            <td>${Utils.escapeHtml(task.projectName || '未指定项目')}</td>
+            <td>${Utils.escapeHtml(task.name)}</td>
+            <td>${task.progress || 0}%</td>
+            <td>${Utils.escapeHtml(taskReport.work || '-')}</td>
+            <td>${Utils.escapeHtml(taskReport.issues || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <section class="report-section">
+          <h2>${Utils.escapeHtml(memberName)}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>项目</th>
+                <th>任务</th>
+                <th>进度</th>
+                <th>进展记录</th>
+                <th>阻塞问题</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${taskRows || '<tr><td colspan="5">暂无任务</td></tr>'}
+            </tbody>
+          </table>
+        </section>
+      `;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${Utils.escapeHtml(normalizedMeeting.title || '周会')} - 会议报告</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px;
+      font-family: "Segoe UI", "PingFang SC", sans-serif;
+      color: #1f2937;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
     }
-    
-    const attendeeNames = meeting.attendees?.map(id => {
-      const m = members.find(m => m.id === id);
-      return m ? m.name : null;
-    }).filter(Boolean).join('、') || '无';
-    
-    let reportContent = `# 芯片测试组 周会报告\n`;
-    reportContent += `**${year}年第${week}周** (${weekRange})\n\n`;
-    
-    reportContent += `## 会议信息\n`;
-    reportContent += `- **日期**: ${meeting.date}\n`;
-    reportContent += `- **参会人员**: ${attendeeNames}\n\n`;
-    
-    reportContent += `## 成员任务进展\n\n`;
-    
-    Object.entries(tasksByAssignee).forEach(([assigneeId, tasks]) => {
-      const member = members.find(m => m.id === assigneeId);
-      const memberName = member ? member.name : '未分配';
-      
-      reportContent += `### ${memberName}\n`;
-      
-      tasks.forEach(task => {
-        const project = store.data.projects.find(p => p.id === task.projectId);
-        const projectName = project ? project.name : '未指定项目';
-        const taskReport = meeting.taskReports?.[task.id] || {};
-        
-        reportContent += `**${task.name}** (${projectName}) - 进度: ${task.progress}%\n`;
-        
-        if (taskReport.work) {
-          reportContent += `- 📝 本周工作: ${taskReport.work}\n`;
-        }
-        if (taskReport.issues) {
-          reportContent += `- ⚠️ 遇到问题: ${taskReport.issues}\n`;
-        }
-        reportContent += `\n`;
-      });
-    });
-    
-    const issuesList = [];
-    Object.values(meeting.taskReports || {}).forEach(report => {
-      if (report.issues) {
-        issuesList.push(report.issues);
-      }
-    });
-    
-    if (issuesList.length > 0) {
-      reportContent += `## 问题汇总\n\n`;
-      issuesList.forEach((issue, i) => {
-        reportContent += `${i + 1}. ${issue}\n`;
-      });
-      reportContent += `\n`;
+    .report-shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 24px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
     }
-    
-    if (meeting.notes) {
-      reportContent += `## 会议决议\n\n${meeting.notes}\n`;
+    .report-header {
+      padding: 36px 40px 28px;
+      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+      color: #ffffff;
     }
-    
-    const modalContent = Utils.createElement('div', { class: 'report-modal' });
-    modalContent.innerHTML = `
-      <div class="modal-header">
-        <h2>${Utils.icon('chart')} 会议报告</h2>
-        <button class="btn btn-icon close-btn">${Utils.icon('close')}</button>
+    .report-header h1 {
+      margin: 0 0 12px;
+      font-size: 34px;
+    }
+    .report-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      font-size: 15px;
+      opacity: 0.92;
+    }
+    .report-body {
+      padding: 32px 40px 40px;
+    }
+    .report-notes {
+      margin-bottom: 28px;
+      padding: 20px 24px;
+      border-radius: 18px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      white-space: pre-wrap;
+      line-height: 1.7;
+    }
+    .report-section + .report-section {
+      margin-top: 28px;
+    }
+    .report-section h2 {
+      margin: 0 0 16px;
+      font-size: 22px;
+      color: #0f172a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+    }
+    thead {
+      background: #eff6ff;
+    }
+    th, td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    tbody tr:nth-child(even) {
+      background: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <div class="report-shell">
+    <header class="report-header">
+      <h1>${Utils.escapeHtml(normalizedMeeting.title || '周会')}</h1>
+      <div class="report-meta">
+        <span>创建时间：${this.formatMeetingDateTime(normalizedMeeting.createdAt)}</span>
+        <span>最近更新：${this.formatMeetingDateTime(normalizedMeeting.updatedAt || normalizedMeeting.createdAt)}</span>
+        <span>参会人员：${Utils.escapeHtml(attendeeNames)}</span>
+        <span>任务数：${normalizedMeeting.tasks.length}</span>
       </div>
-      <div class="report-preview">
-        <pre>${Utils.escapeHtml(reportContent)}</pre>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn-secondary cancel-btn">关闭</button>
-        <button type="button" class="btn btn-primary" id="copyReportBtn">${Utils.icon('copy')} 复制到剪贴板</button>
-      </div>
-    `;
-    
-    const overlay = Utils.showModal(modalContent);
-    
-    modalContent.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
-    modalContent.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
-    
-    modalContent.querySelector('#copyReportBtn').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(reportContent);
-        alert('报告已复制到剪贴板！可粘贴到钉钉/企业微信/Word');
-      } catch (e) {
-        alert('复制失败，请手动复制');
-      }
-    });
+    </header>
+    <main class="report-body">
+      <section class="report-notes">${Utils.escapeHtml(normalizedMeeting.notes || '暂无会议备注')}</section>
+      ${taskSections || '<p>暂无任务记录</p>'}
+    </main>
+  </div>
+</body>
+</html>`;
   }
 
+  exportMeetingHtmlReport() {
+    const meeting = this.collectMeetingDraftFromDom();
+    const html = this.buildMeetingHtmlReport(meeting);
+    const timestamp = this.formatMeetingDateTime(meeting.createdAt).replace(/[ :]/g, '-');
+    const filename = `${this.sanitizeMeetingFilename(meeting.title || '周会')}-${timestamp}.html`;
+    Utils.downloadFile(html, filename, 'text/html');
+  }
   exportData() {
     const data = store.exportData();
     const filename = `chip-todo-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -1436,3 +1758,6 @@ class ChipTodoApp {
 
 const app = new ChipTodoApp();
 window.app = app;
+
+
+

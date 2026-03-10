@@ -1,5 +1,9 @@
 const { defineConfig } = require('@playwright/test');
 
+const webServerCommand = process.platform === 'win32'
+  ? 'python -m http.server 5500 -d chip-todo'
+  : 'python3 -m http.server 5500 -d chip-todo';
+
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 30000,
@@ -9,7 +13,7 @@ module.exports = defineConfig({
     baseURL: 'http://localhost:5500',
   },
   webServer: {
-    command: 'python3 -m http.server 5500 -d chip-todo',
+    command: webServerCommand,
     port: 5500,
     reuseExistingServer: true,
   },
