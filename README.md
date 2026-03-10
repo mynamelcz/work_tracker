@@ -1,46 +1,70 @@
-# Chip Todo - 芯片测试工作看板
+# Chip Todo
 
-一个基于浏览器本地存储的芯片测试部门任务管理系统。
+芯片测试部门任务管理单页应用，基于原生 HTML、CSS、JavaScript 实现，使用浏览器
+`localStorage` 持久化数据，不依赖后端服务。
 
-## 功能特性
+## 项目定位
 
-- 📊 看板视图 - 甘特图展示任务进度
-- 📁 项目管理 - 创建和管理芯片测试项目
-- 👥 成员管理 - 团队成员和角色管理
-- 📅 周视图 - 按周查看和导航任务
-- 📜 历史存档 - 存档每周数据
-- 📤 导入/导出 - JSON 格式数据备份
+- `看板`：只读视图，用于按成员和状态查看任务，不负责编辑任务
+- `管理`：创建和编辑项目、成员、任务
+- `会议`：创建会议记录、导入参会人员、同步任务进展和阻塞问题、调整任务进度
+
+这三块现在已经按职责分开：
+
+- 看板不再承担编辑入口
+- 管理页负责结构化维护任务数据
+- 会议页只修改任务进度并沉淀会议记录
 
 ## 快速开始
 
-### 运行应用
-
-直接在浏览器中打开 `chip-todo/index.html`：
+### 直接打开
 
 ```bash
-# Windows
 start chip-todo/index.html
-
-# macOS
-open chip-todo/index.html
-
-# Linux
-xdg-open chip-todo/index.html
 ```
 
-或使用 VS Code Live Server：
+### 本地静态服务
 
-1. 安装扩展：`code --install-extension ritwickdey.LiveServer`
-2. 右键 `index.html` → Open with Live Server
+```bash
+python -m http.server 5500 -d chip-todo
+```
+
+然后访问 `http://localhost:5500/`。
+
+## 测试命令
+
+```bash
+npm test
+npm run test:single
+npm run test:ui
+```
+
+## 目录结构
+
+```text
+.
+├── chip-todo/
+│   ├── index.html
+│   ├── clear-data.html
+│   ├── css/style.css
+│   └── js/
+│       ├── utils.js
+│       ├── store.js
+│       └── app.js
+├── docs/system-guide.md
+├── tests/app.spec.js
+├── playwright.config.js
+└── package.json
+```
 
 ## 数据存储
 
-- 本地存储：`localStorage`
-- 数据键：`chip_todo_data`（当前数据）、`chip_todo_history`（历史存档）
-- 导出备份：支持 JSON 格式导出/导入
+- 主数据：`chip_todo_data`
+- 会议数据：`chip_todo_meetings`
+- 历史归档：`chip_todo_history`
 
-## 技术栈
+## 详细文档
 
-- Vanilla HTML/CSS/JavaScript
-- 无需构建工具
-- 兼容现代浏览器（Chrome, Firefox, Safari, Edge）
+完整的系统说明、页面职责、会议模型、数据结构、测试策略和维护建议见：
+
+- [docs/system-guide.md](docs/system-guide.md)
