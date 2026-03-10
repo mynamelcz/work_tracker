@@ -92,6 +92,103 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('#taskForm')).toHaveCount(0);
   });
 
+  test('should show meeting progress and blockers in task details sorted by time', async ({ page }) => {
+    await createProject(page, 'Board History Project');
+    await createMember(page, 'History Owner');
+    await openProjectDetail(page, 'Board History Project');
+    await addTaskFromProjectDetail(page, 'History Task', { assigneeName: 'History Owner', progress: 40 });
+
+    const seeded = await page.evaluate(() => {
+      const data = JSON.parse(localStorage.getItem('chip_todo_data') || '{}');
+      const task = data.tasks.find((item) => item.name === 'History Task');
+      const project = data.projects.find((item) => item.id === task.projectId);
+      const member = data.members.find((item) => item.id === task.assignee);
+      const taskSnapshot = {
+        id: task.id,
+        projectId: task.projectId,
+        projectName: project.name,
+        name: task.name,
+        assignee: task.assignee,
+        assigneeName: member.name,
+        priority: task.priority,
+        progress: task.progress,
+        status: task.status
+      };
+
+      const meetings = [
+        {
+          id: 'meeting_early',
+          title: 'First Sync',
+          attendees: [member.id],
+          notes: '',
+          tasks: [taskSnapshot],
+          taskReports: {
+            [task.id]: {
+              work: 'Earlier progress',
+              issues: 'Earlier blocker',
+              updatedAt: '2026-03-01T09:00:00.000Z'
+            }
+          },
+          createdAt: '2026-03-01T08:00:00.000Z',
+          updatedAt: '2026-03-01T09:00:00.000Z'
+        },
+        {
+          id: 'meeting_late',
+          title: 'Latest Sync',
+          attendees: [member.id],
+          notes: '',
+          tasks: [taskSnapshot],
+          taskReports: {
+            [task.id]: {
+              work: 'Latest progress',
+              issues: 'Latest blocker',
+              updatedAt: '2026-03-10T09:00:00.000Z'
+            }
+          },
+          createdAt: '2026-03-10T08:00:00.000Z',
+          updatedAt: '2026-03-10T09:00:00.000Z'
+        }
+      ];
+
+      localStorage.setItem('chip_todo_meetings', JSON.stringify(meetings));
+      return { taskId: task.id };
+    });
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.click('.tab[data-view="board"]');
+    await page.locator('.gantt-task', { hasText: 'History Task' }).click();
+
+    await expect(page.locator('.detail-priority-badge')).toHaveText('中');
+    await expect(page.locator('.task-detail-view')).toContainText('会议记录');
+    await expect(page.locator('.task-history-item').first()).toContainText('Latest Sync');
+    await expect(page.locator('.task-history-item').first()).toContainText('Latest progress');
+    await expect(page.locator('.task-history-item').first()).toContainText('Latest blocker');
+    await expect(page.locator('.task-history-item').nth(1)).toContainText('First Sync');
+    await expect(page.locator('.task-history-item').nth(1)).toContainText('Earlier progress');
+    await expect(page.locator('.task-history-item').nth(1)).toContainText('Earlier blocker');
+    expect(seeded.taskId).toBeTruthy();
+  });
+
+  test('should display task duration in days on the board gantt cards', async ({ page }) => {
+    await createProject(page, 'Duration Project');
+    await openProjectDetail(page, 'Duration Project');
+    await addTaskFromProjectDetail(page, 'Duration Task', { progress: 20 });
+
+    await page.evaluate(() => {
+      const data = JSON.parse(localStorage.getItem('chip_todo_data') || '{}');
+      const task = data.tasks.find((item) => item.name === 'Duration Task');
+      task.createdAt = '2026-03-01T00:00:00.000Z';
+      localStorage.setItem('chip_todo_data', JSON.stringify(data));
+    });
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.click('.tab[data-view="board"]');
+
+    await expect(page.locator('.gantt-task', { hasText: 'Duration Task' })).toContainText(/持续\s+\d+\s+天/);
+  });
+
   test('should navigate to management tab', async ({ page }) => {
     await page.click('.tab[data-view="management"]');
     await expect(page.locator('#managementView')).toBeVisible();

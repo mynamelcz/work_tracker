@@ -339,6 +339,7 @@
     const statusClass = Utils.getStatusClass(task.status);
     const progressClass = this.getProgressClass(progress);
     const progressColor = this.getProgressColor(progress);
+    const durationDays = this.getTaskDurationDays(task);
     
     const priorityLabels = { low: '低', medium: '中', high: '高' };
     const priorityIcons = { 
@@ -358,7 +359,10 @@
         <div class="task-bar">
           <div class="task-progress ${progressClass}" style="width: ${progress}%; background: ${progressColor};"></div>
         </div>
-        <span class="task-status">${progress}% ${Utils.getStatusText(task.status)}</span>
+        <div class="task-meta">
+          <span class="task-status">${progress}% ${Utils.getStatusText(task.status)}</span>
+          <span class="task-duration">${Utils.icon('clock')} 持续 ${durationDays} 天</span>
+        </div>
       </div>
     `;
   }
@@ -398,6 +402,52 @@
     const clampedProgress = Math.min(100, Math.max(0, Number(progress) || 0));
     const progressColor = this.getProgressColor(clampedProgress);
     return `linear-gradient(90deg, ${progressColor} 0%, ${progressColor} ${clampedProgress}%, #E2E8F0 ${clampedProgress}%, #E2E8F0 100%)`;
+  }
+
+  getTaskDurationDays(task) {
+    const start = task?.createdAt ? new Date(task.createdAt) : null;
+    const end = task?.completedAt ? new Date(task.completedAt) : new Date();
+
+    if (!start || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return 1;
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / dayMs));
+  }
+
+  renderTaskMeetingHistory(taskId) {
+    const entries = store.getTaskMeetingHistory(taskId);
+    if (entries.length === 0) {
+      return `
+        <div class="task-history-empty">
+          暂无会议记录，后续会议中填写的进展和阻塞问题会显示在这里。
+        </div>
+      `;
+    }
+
+    return `
+      <div class="task-history-list">
+        ${entries.map((entry) => `
+          <article class="task-history-item">
+            <div class="task-history-header">
+              <strong>${Utils.escapeHtml(entry.meetingTitle)}</strong>
+              <span>${this.formatMeetingDateTime(entry.updatedAt || entry.createdAt)}</span>
+            </div>
+            <div class="task-history-grid">
+              <div class="task-history-block">
+                <label>进展记录</label>
+                <p>${Utils.escapeHtml(entry.work) || '未记录'}</p>
+              </div>
+              <div class="task-history-block">
+                <label>阻塞问题</label>
+                <p>${Utils.escapeHtml(entry.issues) || '未记录'}</p>
+              </div>
+            </div>
+          </article>
+        `).join('')}
+      </div>
+    `;
   }
 
   renderManagement() {
@@ -633,11 +683,7 @@
     const project = store.data.projects.find(p => p.id === task.projectId);
     const member = store.data.members.find(m => m.id === task.assignee);
     const priorityLabels = { low: '低', medium: '中', high: '高' };
-    const priorityIcons = { 
-      low: Utils.icon('arrowDown'), 
-      medium: Utils.icon('minus'), 
-      high: Utils.icon('arrowUp') 
-    };
+    const durationDays = this.getTaskDurationDays(task);
     
     const modalContent = Utils.createElement('div', { class: 'form-modal' });
     modalContent.innerHTML = `
@@ -657,7 +703,7 @@
         </div>
         <div class="detail-row">
           <label>优先级</label>
-          <span>${priorityIcons[task.priority || 'medium']} ${priorityLabels[task.priority || 'medium']}</span>
+          <span class="detail-priority-badge priority-${task.priority || 'medium'}">${priorityLabels[task.priority || 'medium']}</span>
         </div>
         <div class="detail-row">
           <label>状态</label>
@@ -668,8 +714,16 @@
           <span>${task.progress || 0}%</span>
         </div>
         <div class="detail-row">
+          <label>持续时间</label>
+          <span>${durationDays} 天</span>
+        </div>
+        <div class="detail-row">
           <label>描述</label>
           <span>${Utils.escapeHtml(task.description) || '暂无描述'}</span>
+        </div>
+        <div class="detail-section">
+          <label>会议记录</label>
+          ${this.renderTaskMeetingHistory(task.id)}
         </div>
       </div>
       <div class="form-actions">

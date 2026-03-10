@@ -662,6 +662,32 @@ class DataStore {
     }));
   }
 
+  getTaskMeetingHistory(taskId) {
+    if (!taskId) return [];
+
+    return this.getMeetings()
+      .map((meeting) => {
+        const report = meeting.taskReports?.[taskId];
+        if (!report) return null;
+
+        const work = String(report.work || '').trim();
+        const issues = String(report.issues || '').trim();
+        if (!work && !issues) return null;
+
+        const updatedAt = report.updatedAt || meeting.updatedAt || meeting.createdAt;
+        return {
+          meetingId: meeting.id,
+          meetingTitle: meeting.title || '周会',
+          createdAt: meeting.createdAt,
+          updatedAt,
+          work,
+          issues
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  }
+
   getMeetingTasks(meetingId) {
     const meeting = this.getMeeting(meetingId);
     if (!meeting) return [];
