@@ -87,9 +87,22 @@ test.describe('Chip Todo App', () => {
     await page.click('.tab[data-view="board"]');
     await page.locator('.gantt-task', { hasText: 'Board Readonly Task' }).click();
 
+    await expect(page.locator('.gantt-task', { hasText: 'Board Readonly Task' })).toContainText('\u8fdb\u884c\u4e2d');
     await expect(page.locator('.task-detail-view')).toBeVisible();
     await expect(page.locator('.task-detail-view')).toContainText('Board Readonly Task');
     await expect(page.locator('#taskForm')).toHaveCount(0);
+  });
+
+  test('should label unassigned tasks correctly on the board', async ({ page }) => {
+    await createProject(page, 'Unassigned Project');
+    await openProjectDetail(page, 'Unassigned Project');
+    await addTaskFromProjectDetail(page, 'Unassigned Task', { progress: 10 });
+
+    await page.click('.project-detail-modal .close-btn');
+    await page.click('.tab[data-view="board"]');
+
+    await expect(page.locator('.gantt-member')).toContainText('\u672a\u5206\u914d');
+    await expect(page.locator('.gantt-task', { hasText: 'Unassigned Task' })).toContainText('\u8fdb\u884c\u4e2d');
   });
 
   test('should show meeting progress and blockers in task details sorted by time', async ({ page }) => {
@@ -355,6 +368,11 @@ test.describe('Chip Todo App', () => {
 
     await openProjectDetail(page, 'Meeting Import Project');
     await addTaskFromProjectDetail(page, 'Open Task', { assigneeName: '寮犱笁' });
+    await addTaskFromProjectDetail(page, 'Paused Task', {
+      assigneeName: '寮犱笁',
+      status: 'paused',
+      progress: 45
+    });
     await addTaskFromProjectDetail(page, 'Done Task', { assigneeName: '寮犱笁', status: 'completed' });
 
     await page.click('.project-detail-modal .close-btn');
@@ -367,12 +385,15 @@ test.describe('Chip Todo App', () => {
 
     await page.locator('.meeting-member-group', { hasText: '寮犱笁' }).locator('.import-task-btn').click();
     await expect(page.locator('.task-select-list')).toContainText('Open Task');
+    await expect(page.locator('.task-select-list')).toContainText('Paused Task');
     await expect(page.locator('.task-select-list')).not.toContainText('Done Task');
 
     await page.locator('.task-select-item', { hasText: 'Open Task' }).locator('input').check();
+    await page.locator('.task-select-item', { hasText: 'Paused Task' }).locator('input').check();
     await page.click('.meeting-selector-modal .confirm-btn');
 
     await expect(page.locator('.meeting-tasks-list')).toContainText('Open Task');
+    await expect(page.locator('.meeting-tasks-list')).toContainText('Paused Task');
     await expect(page.locator('.meeting-tasks-list')).not.toContainText('Done Task');
   });
 
@@ -449,6 +470,8 @@ test.describe('Chip Todo App', () => {
 
     await page.click('#newMeetingBtn');
     await expect(page.locator('.confirm-modal')).toBeVisible();
+    await expect(page.locator('.confirm-modal [data-action="cancel"]')).toHaveText('\u53d6\u6d88');
+    await expect(page.locator('.confirm-modal [data-action="confirm"]')).toHaveText('\u786e\u8ba4');
     await confirmModal(page);
 
     await expect(page.locator('#meetingTitle')).toHaveValue('\u5468\u4f1a');

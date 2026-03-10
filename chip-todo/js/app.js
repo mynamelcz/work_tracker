@@ -311,7 +311,9 @@
     
     Object.entries(tasksByAssignee).forEach(([assigneeId, memberTasks]) => {
       const member = members.find(m => m.id === assigneeId);
-      const memberName = member ? member.name : (tasks[0]?.assigneeName || '未分配');
+      const memberName = member
+        ? member.name
+        : (assigneeId === 'unassigned' ? '未分配' : (memberTasks[0]?.assigneeName || '未分配'));
       const memberColor = member ? member.color : '#6B7280';
       
       html += `
@@ -1709,7 +1711,9 @@
 
     const taskSections = Object.entries(tasksByAssignee).map(([assigneeId, tasks]) => {
       const member = store.data.members.find((item) => item.id === assigneeId) || null;
-      const memberName = member ? member.name : (tasks[0]?.assigneeName || '未分配');
+      const memberName = member
+        ? member.name
+        : (assigneeId === 'unassigned' ? '未分配' : (tasks[0]?.assigneeName || '未分配'));
       const taskRows = tasks.map((task) => {
         const taskReport = normalizedMeeting.taskReports?.[task.id] || {};
         return `

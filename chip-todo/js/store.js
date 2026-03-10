@@ -735,12 +735,11 @@ class DataStore {
     return grouped;
   }
 
-  // Get all unfinished tasks for a specific member
+  // Get all unfinished tasks for a specific member, including paused items.
   getUnfinishedTasksByMember(memberId) {
     return this.data.tasks.filter(t =>
       t.assignee === memberId &&
-      t.status !== 'completed' &&
-      t.status !== 'paused'
+      t.status !== 'completed'
     );
   }
 }
