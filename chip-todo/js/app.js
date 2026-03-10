@@ -172,6 +172,7 @@
                   ? `当前项目：${Utils.escapeHtml(selectedProject.name)}`
                   : '按任务状态和项目查看当前工作负载'}
               </p>
+              <p class="board-readonly-hint">看板仅用于查看任务，任务新增和编辑请到“管理”页。</p>
             </div>
             <div class="filter-tabs">
               <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">全部</button>
@@ -368,7 +369,7 @@
 
     Utils.$$('.gantt-task').forEach((taskEl) => {
       taskEl.addEventListener('click', () => {
-        this.showTaskModal(taskEl.dataset.id);
+        this.showTaskDetail(taskEl.dataset.id);
       });
     });
   }
@@ -1027,6 +1028,67 @@
       .replace(/^-|-$/g, '') || 'meeting-report';
   }
 
+  normalizeMeetingForComparison(meeting) {
+    const draft = this.createMeetingDraft(meeting);
+    const normalizedTasks = (draft.tasks || [])
+      .map((task) => ({
+        id: task.id || '',
+        projectId: task.projectId || '',
+        projectName: task.projectName || '',
+        name: task.name || '',
+        assignee: task.assignee || '',
+        assigneeName: task.assigneeName || '',
+        priority: task.priority || 'medium',
+        progress: task.progress || 0,
+        status: task.status || 'in_progress'
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const normalizedReports = Object.fromEntries(
+      Object.entries(draft.taskReports || {})
+        .sort(([taskIdA], [taskIdB]) => String(taskIdA).localeCompare(String(taskIdB)))
+        .map(([taskId, report]) => [taskId, {
+          work: report?.work || '',
+          issues: report?.issues || '',
+          plan: report?.plan || ''
+        }])
+    );
+
+    return {
+      id: draft.id || null,
+      title: draft.title || '周会',
+      notes: draft.notes || '',
+      attendees: [...(draft.attendees || [])].sort(),
+      tasks: normalizedTasks,
+      taskReports: normalizedReports
+    };
+  }
+
+  hasMeetingDraftChanges(draft) {
+    const baseline = draft?.id
+      ? (store.getMeeting(draft.id) || draft)
+      : { createdAt: draft?.createdAt || new Date().toISOString() };
+
+    return JSON.stringify(this.normalizeMeetingForComparison(draft)) !==
+      JSON.stringify(this.normalizeMeetingForComparison(baseline));
+  }
+
+  async saveMeetingDraftWithConfirmation(message = '确定要保存当前会议记录吗？') {
+    this.collectMeetingDraftFromDom();
+    const confirmed = await Utils.confirm(message);
+    if (!confirmed) {
+      return null;
+    }
+
+    const draftData = this.collectMeetingDraftFromDom({ persistTaskUpdates: true });
+    const isNewMeeting = !draftData.id;
+    const savedMeeting = store.saveMeeting(draftData);
+    this.currentMeetingId = savedMeeting.id;
+    this.meetingDraft = this.createMeetingDraft(savedMeeting);
+    this.updateStats();
+    alert(isNewMeeting ? '会议已创建并保存！' : '会议记录已保存！');
+    return savedMeeting;
+  }
+
   collectMeetingDraftFromDom(options = {}) {
     const { persistTaskUpdates = false } = options;
     const container = Utils.$('#meetingView');
@@ -1255,20 +1317,27 @@
       high: Utils.icon('arrowUp')
     };
     const priority = task.priority || 'medium';
+    const progress = task.progress || 0;
+    const progressClass = this.getProgressClass(progress);
+    const progressColor = this.getProgressColor(progress);
 
     return `
       <div class="meeting-task-item" data-task-id="${task.id}" data-assignee-id="${task.assignee || ''}" data-project-id="${task.projectId || ''}" data-priority="${priority}">
         <div class="task-item-header">
           <span class="task-project">${Utils.escapeHtml(task.projectName || '未指定项目')}</span>
-          <span class="task-sep">|</span>
           <span class="task-name">${Utils.escapeHtml(task.name)}</span>
-          <span class="task-sep">|</span>
-          <span class="task-priority" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
+          <span class="task-priority meeting-task-priority priority-${priority}" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}优先</span>
           <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="移出会议记录">${Utils.icon('trash')}</button>
         </div>
+        <div class="meeting-task-progress-overview">
+          <div class="task-bar meeting-task-progress-bar">
+            <div class="task-progress meeting-task-progress-fill ${progressClass}" style="width: ${progress}%; background: ${progressColor};"></div>
+          </div>
+          <span class="meeting-task-progress-text" style="color: ${progressColor}">${progress}%</span>
+        </div>
         <div class="task-progress-slider">
-          <label>进度: <span class="progress-value">${task.progress || 0}</span>%</label>
-          <input type="range" class="task-progress-input" min="0" max="100" value="${task.progress || 0}">
+          <label>调整进度: <span class="progress-value" style="color: ${progressColor}">${progress}</span>%</label>
+          <input type="range" class="task-progress-input" min="0" max="100" value="${progress}">
         </div>
         <div class="task-report-fields">
           <div class="report-field">
@@ -1364,11 +1433,10 @@
     `).join('');
 
     container.innerHTML = `
-      <div class="meeting-page">
-        <div class="meeting-sidebar">
+        <div class="meeting-page">
+          <div class="meeting-sidebar">
           <div class="meeting-sidebar-header">
             <h3>${Utils.icon('document')} 查询会议</h3>
-            <button class="btn btn-primary btn-small" id="newMeetingBtn">${Utils.icon('plus')} 新建会议</button>
           </div>
           <form class="meeting-search-form" id="meetingSearchForm">
             <input type="search" id="meetingSearchInput" value="${Utils.escapeHtml(this.meetingSearchQuery)}" placeholder="按主题、参会人、备注查询会议">
@@ -1399,8 +1467,9 @@
               <p class="meeting-meta">创建时间：${this.formatMeetingDateTime(draft.createdAt)}${draft.updatedAt ? ` · 最近保存：${this.formatMeetingDateTime(draft.updatedAt)}` : ''}</p>
             </div>
             <div class="meeting-actions">
+              <button class="btn btn-meeting-new" id="newMeetingBtn">${Utils.icon('plus')} 新建会议</button>
               ${draft.id ? `<button class="btn btn-danger" id="deleteMeetingBtn">${Utils.icon('trash')} 删除会议</button>` : ''}
-              <button class="btn btn-secondary" id="exportMeetingHtmlBtn">${Utils.icon('download')} 导出HTML报告</button>
+              <button class="btn btn-meeting-export" id="exportMeetingHtmlBtn">${Utils.icon('download')} 导出HTML报告</button>
               <button class="btn btn-primary" id="saveMeetingBtn">${Utils.icon('check')} 保存会议</button>
             </div>
           </div>
@@ -1468,7 +1537,16 @@
       this.renderMeeting();
     });
 
-    Utils.$('#newMeetingBtn')?.addEventListener('click', () => {
+    Utils.$('#newMeetingBtn')?.addEventListener('click', async () => {
+      const currentDraft = this.collectMeetingDraftFromDom();
+      if (this.hasMeetingDraftChanges(currentDraft)) {
+        const savedMeeting = await this.saveMeetingDraftWithConfirmation('当前会议有未保存内容，是否先保存后再新建会议？');
+        if (!savedMeeting) {
+          alert('请先保存当前会议，再新建新的会议记录。');
+          return;
+        }
+      }
+
       this.currentMeetingId = null;
       this.meetingDraft = this.createMeetingDraft();
       this.renderMeeting();
@@ -1490,13 +1568,9 @@
     });
 
     Utils.$$('#saveMeetingBtn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const draftData = this.collectMeetingDraftFromDom({ persistTaskUpdates: true });
-        const isNewMeeting = !draftData.id;
-        const savedMeeting = store.saveMeeting(draftData);
-        this.currentMeetingId = savedMeeting.id;
-        this.meetingDraft = this.createMeetingDraft(savedMeeting);
-        alert(isNewMeeting ? '会议已创建并保存！' : '会议记录已保存！');
+      btn.addEventListener('click', async () => {
+        const savedMeeting = await this.saveMeetingDraftWithConfirmation('确定要保存当前会议记录吗？');
+        if (!savedMeeting) return;
         this.renderMeeting();
       });
     });
@@ -1554,8 +1628,20 @@
 
     Utils.$$('.task-progress-input').forEach((slider) => {
       slider.addEventListener('input', (e) => {
-        const valueSpan = e.target.closest('.task-progress-slider').querySelector('.progress-value');
-        valueSpan.textContent = e.target.value;
+        const taskItem = e.target.closest('.meeting-task-item');
+        const value = parseInt(e.target.value, 10) || 0;
+        const progressColor = this.getProgressColor(value);
+        const progressClass = this.getProgressClass(value);
+        const valueSpan = taskItem.querySelector('.progress-value');
+        const progressText = taskItem.querySelector('.meeting-task-progress-text');
+        const progressFill = taskItem.querySelector('.meeting-task-progress-fill');
+        valueSpan.textContent = value;
+        valueSpan.style.color = progressColor;
+        progressText.textContent = `${value}%`;
+        progressText.style.color = progressColor;
+        progressFill.style.width = `${value}%`;
+        progressFill.style.background = progressColor;
+        progressFill.className = `task-progress meeting-task-progress-fill ${progressClass}`;
       });
     });
 
