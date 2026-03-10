@@ -442,4 +442,27 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('.gantt-task')).toContainText('瀹屾垚浠诲姟');
     await expect(page.locator('#projectList')).toContainText('Completed Project');
   });
+
+  test('should filter pending tasks on the board', async ({ page }) => {
+    await createProject(page, 'Pending Project');
+    await openProjectDetail(page, 'Pending Project');
+    await addTaskFromProjectDetail(page, 'Pending Task');
+
+    await page.evaluate(() => {
+      const data = JSON.parse(localStorage.getItem('chip_todo_data') || '{}');
+      const task = data.tasks.find((item) => item.name === 'Pending Task');
+      if (task) {
+        task.status = 'pending';
+        task.progress = 0;
+      }
+      localStorage.setItem('chip_todo_data', JSON.stringify(data));
+    });
+
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    await page.click('.filter-tab[data-filter="pending"]');
+
+    await expect(page.locator('.gantt-task')).toContainText('Pending Task');
+    await expect(page.locator('#projectList')).toContainText('Pending Project');
+  });
 });

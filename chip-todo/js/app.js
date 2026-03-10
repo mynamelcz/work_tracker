@@ -7,7 +7,7 @@
     this.meetingDraft = null;
     this.meetingSearchQuery = '';
     this.meetingSearchMonth = '';
-    this.boardFilter = 'all'; // all, in_progress, paused, completed
+    this.boardFilter = 'all'; // all, pending, in_progress, paused, completed
     this.init();
   }
 
@@ -132,6 +132,7 @@
     const projectTaskStats = this.getProjectTaskStats(this.getTasksByStatusFilter(this.boardFilter));
     const filterLabels = {
       all: '全部任务',
+      pending: '待处理',
       in_progress: '进行中',
       paused: '已暂停',
       completed: '已完成'
@@ -175,6 +176,7 @@
             </div>
             <div class="filter-tabs">
               <button class="filter-tab ${this.boardFilter === 'all' ? 'active' : ''}" data-filter="all">全部</button>
+              <button class="filter-tab ${this.boardFilter === 'pending' ? 'active' : ''}" data-filter="pending">待处理</button>
               <button class="filter-tab ${this.boardFilter === 'in_progress' ? 'active' : ''}" data-filter="in_progress">进行中</button>
               <button class="filter-tab ${this.boardFilter === 'paused' ? 'active' : ''}" data-filter="paused">暂停</button>
               <button class="filter-tab ${this.boardFilter === 'completed' ? 'active' : ''}" data-filter="completed">已完成</button>
@@ -219,6 +221,9 @@
   }
 
   getTasksByStatusFilter(filter) {
+    if (filter === 'pending') {
+      return store.data.tasks.filter((task) => task.status === 'pending');
+    }
     if (filter === 'in_progress') {
       return store.data.tasks.filter((task) => task.status === 'in_progress');
     }
@@ -387,6 +392,12 @@
     if (progress >= 51) return '#3B82F6';
     if (progress >= 26) return '#F97316';
     return '#EF4444';
+  }
+
+  getProgressSliderBackground(progress) {
+    const clampedProgress = Math.min(100, Math.max(0, Number(progress) || 0));
+    const progressColor = this.getProgressColor(clampedProgress);
+    return `linear-gradient(90deg, ${progressColor} 0%, ${progressColor} ${clampedProgress}%, #E2E8F0 ${clampedProgress}%, #E2E8F0 100%)`;
   }
 
   renderManagement() {
@@ -804,7 +815,7 @@
         <div class="form-group">
           <label>进度: <span id="progressValue" style="color: ${progressColor}">${currentProgress}%</span></label>
           <div class="progress-slider-container">
-            <input type="range" name="progress" min="0" max="100" value="${currentProgress}" class="progress-slider" id="progressSlider" ${isLockedCompletedProject ? 'disabled' : ''}>
+            <input type="range" name="progress" min="0" max="100" value="${currentProgress}" class="progress-slider" id="progressSlider" style="background: ${this.getProgressSliderBackground(currentProgress)}" ${isLockedCompletedProject ? 'disabled' : ''}>
           </div>
         </div>
         <div class="form-group">
@@ -843,6 +854,7 @@
       const value = parseInt(e.target.value);
       progressValue.textContent = value + '%';
       progressValue.style.color = this.getProgressColor(value);
+      progressSlider.style.background = this.getProgressSliderBackground(value);
     });
     
     modalContent.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
