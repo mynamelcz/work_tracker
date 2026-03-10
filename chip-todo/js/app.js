@@ -6,8 +6,7 @@
     this.currentMeetingId = null;
     this.meetingDraft = null;
     this.meetingSearchQuery = '';
-    this.meetingSearchStartDate = '';
-    this.meetingSearchEndDate = '';
+    this.meetingSearchMonth = '';
     this.boardFilter = 'all'; // all, in_progress, paused, completed
     this.init();
   }
@@ -1326,18 +1325,15 @@
         <div class="task-item-header">
           <span class="task-project">${Utils.escapeHtml(task.projectName || '未指定项目')}</span>
           <span class="task-name">${Utils.escapeHtml(task.name)}</span>
-          <span class="task-priority meeting-task-priority priority-${priority}" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}优先</span>
+          <span class="task-priority meeting-task-priority priority-${priority}" title="优先级: ${priorityLabels[priority]}">${priorityIcons[priority]} ${priorityLabels[priority]}</span>
           <button class="btn btn-icon btn-danger btn-small remove-task-btn" title="移出会议记录">${Utils.icon('trash')}</button>
         </div>
-        <div class="meeting-task-progress-overview">
-          <div class="task-bar meeting-task-progress-bar">
-            <div class="task-progress meeting-task-progress-fill ${progressClass}" style="width: ${progress}%; background: ${progressColor};"></div>
-          </div>
-          <span class="meeting-task-progress-text" style="color: ${progressColor}">${progress}%</span>
-        </div>
         <div class="task-progress-slider">
-          <label>调整进度: <span class="progress-value" style="color: ${progressColor}">${progress}</span>%</label>
-          <input type="range" class="task-progress-input" min="0" max="100" value="${progress}">
+          <div class="task-progress-slider-header">
+            <span class="progress-label">进度</span>
+            <span class="progress-value" style="color: ${progressColor}">${progress}%</span>
+          </div>
+          <input type="range" class="task-progress-input ${progressClass}" min="0" max="100" value="${progress}" style="background: linear-gradient(90deg, ${progressColor} 0%, ${progressColor} ${progress}%, #e2e8f0 ${progress}%, #e2e8f0 100%);">
         </div>
         <div class="task-report-fields">
           <div class="report-field">
@@ -1359,10 +1355,9 @@
     const members = store.data.members;
     const meetingsList = store.getMeetingsList({
       query: this.meetingSearchQuery,
-      startDate: this.meetingSearchStartDate,
-      endDate: this.meetingSearchEndDate
+      month: this.meetingSearchMonth
     });
-    const hasSearchFilters = Boolean(this.meetingSearchQuery || this.meetingSearchStartDate || this.meetingSearchEndDate);
+    const hasSearchFilters = Boolean(this.meetingSearchQuery || this.meetingSearchMonth);
     const tasksByAssignee = store.groupMeetingTasksByAssignee(draft.tasks || []);
     const attendeeIds = Array.from(new Set([
       ...(draft.attendees || []),
@@ -1428,7 +1423,6 @@
           <span class="history-date">${this.formatMeetingDateTime(meeting.createdAt)}</span>
         </div>
         <div class="history-item-meta">${meeting.attendeeCount}人 · ${meeting.taskCount}项任务</div>
-        <div class="history-item-note">${Utils.escapeHtml(meeting.notes || '暂无备注')}</div>
       </div>
     `).join('');
 
@@ -1439,20 +1433,16 @@
             <h3>${Utils.icon('document')} 查询会议</h3>
           </div>
           <form class="meeting-search-form" id="meetingSearchForm">
-            <input type="search" id="meetingSearchInput" value="${Utils.escapeHtml(this.meetingSearchQuery)}" placeholder="按主题、参会人、备注查询会议">
-            <div class="meeting-search-range">
-              <label class="meeting-search-date">
-                <span>开始日期</span>
-                <input type="date" id="meetingSearchStartDate" value="${Utils.escapeHtml(this.meetingSearchStartDate)}">
-              </label>
-              <label class="meeting-search-date">
-                <span>结束日期</span>
-                <input type="date" id="meetingSearchEndDate" value="${Utils.escapeHtml(this.meetingSearchEndDate)}">
-              </label>
-            </div>
+            <label class="meeting-search-field">
+              <span>主题</span>
+              <input type="search" id="meetingSearchInput" value="${Utils.escapeHtml(this.meetingSearchQuery)}" placeholder="按会议主题查询">
+            </label>
+            <label class="meeting-search-field">
+              <span>日期</span>
+              <input type="month" id="meetingSearchMonth" value="${Utils.escapeHtml(this.meetingSearchMonth)}">
+            </label>
             <div class="meeting-search-actions">
               <button type="submit" class="btn btn-secondary btn-small">查询</button>
-              <button type="button" class="btn btn-secondary btn-small" id="meetingSearchClearBtn">清空</button>
             </div>
           </form>
           <div class="meeting-history-list">
@@ -1516,24 +1506,8 @@
 
     Utils.$('#meetingSearchForm')?.addEventListener('submit', (e) => {
       e.preventDefault();
-      const nextStartDate = Utils.$('#meetingSearchStartDate')?.value || '';
-      const nextEndDate = Utils.$('#meetingSearchEndDate')?.value || '';
-
-      if (nextStartDate && nextEndDate && nextStartDate > nextEndDate) {
-        alert('开始日期不能晚于结束日期');
-        return;
-      }
-
       this.meetingSearchQuery = Utils.$('#meetingSearchInput')?.value?.trim() || '';
-      this.meetingSearchStartDate = nextStartDate;
-      this.meetingSearchEndDate = nextEndDate;
-      this.renderMeeting();
-    });
-
-    Utils.$('#meetingSearchClearBtn')?.addEventListener('click', () => {
-      this.meetingSearchQuery = '';
-      this.meetingSearchStartDate = '';
-      this.meetingSearchEndDate = '';
+      this.meetingSearchMonth = Utils.$('#meetingSearchMonth')?.value || '';
       this.renderMeeting();
     });
 
@@ -1629,19 +1603,16 @@
     Utils.$$('.task-progress-input').forEach((slider) => {
       slider.addEventListener('input', (e) => {
         const taskItem = e.target.closest('.meeting-task-item');
-        const value = parseInt(e.target.value, 10) || 0;
+        const rawValue = parseInt(e.target.value, 10);
+        const value = Math.min(100, Math.max(0, Number.isNaN(rawValue) ? 0 : rawValue));
+        e.target.value = value;
         const progressColor = this.getProgressColor(value);
         const progressClass = this.getProgressClass(value);
         const valueSpan = taskItem.querySelector('.progress-value');
-        const progressText = taskItem.querySelector('.meeting-task-progress-text');
-        const progressFill = taskItem.querySelector('.meeting-task-progress-fill');
-        valueSpan.textContent = value;
+        valueSpan.textContent = `${value}%`;
         valueSpan.style.color = progressColor;
-        progressText.textContent = `${value}%`;
-        progressText.style.color = progressColor;
-        progressFill.style.width = `${value}%`;
-        progressFill.style.background = progressColor;
-        progressFill.className = `task-progress meeting-task-progress-fill ${progressClass}`;
+        e.target.style.background = `linear-gradient(90deg, ${progressColor} 0%, ${progressColor} ${value}%, #e2e8f0 ${value}%, #e2e8f0 100%)`;
+        e.target.className = `task-progress-input ${progressClass}`;
       });
     });
 

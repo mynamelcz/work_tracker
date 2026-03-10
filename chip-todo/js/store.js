@@ -630,31 +630,21 @@ class DataStore {
 
   searchMeetings(filters = '') {
     const normalizedFilters = typeof filters === 'string'
-      ? { query: filters, startDate: '', endDate: '' }
+      ? { query: filters, month: '' }
       : (filters || {});
     const normalizedQuery = String(normalizedFilters.query || '').trim().toLowerCase();
-    const startDate = normalizedFilters.startDate || '';
-    const endDate = normalizedFilters.endDate || '';
-    const startBoundary = startDate ? new Date(`${startDate}T00:00:00`) : null;
-    const endBoundary = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+    const month = String(normalizedFilters.month || '').trim();
     const meetings = [...this.getMeetings()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     return meetings.filter((meeting) => {
-      const attendeeNames = meeting.attendees
-        .map((attendeeId) => this.data.members.find((member) => member.id === attendeeId)?.name || '')
-        .join(' ');
-      const haystack = [
-        meeting.title,
-        meeting.notes,
-        attendeeNames,
-        meeting.createdAt,
-        meeting.updatedAt
-      ].join(' ').toLowerCase();
       const meetingCreatedAt = new Date(meeting.createdAt);
+      const meetingMonth = Number.isNaN(meetingCreatedAt.getTime())
+        ? ''
+        : `${meetingCreatedAt.getFullYear()}-${String(meetingCreatedAt.getMonth() + 1).padStart(2, '0')}`;
+      const haystack = String(meeting.title || '').toLowerCase();
       const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
-      const matchesStart = !startBoundary || meetingCreatedAt >= startBoundary;
-      const matchesEnd = !endBoundary || meetingCreatedAt <= endBoundary;
-      return matchesQuery && matchesStart && matchesEnd;
+      const matchesMonth = !month || meetingMonth === month;
+      return matchesQuery && matchesMonth;
     });
   }
 

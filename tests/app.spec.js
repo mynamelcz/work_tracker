@@ -339,7 +339,8 @@ test.describe('Chip Todo App', () => {
     await expect(page.locator('.meeting-history-list')).toContainText('Issue Review');
     await expect(page.locator('.meeting-history-list')).not.toContainText('Weekly Sync');
 
-    await page.click('#meetingSearchClearBtn');
+    await page.fill('#meetingSearchInput', '');
+    await page.click('#meetingSearchForm button[type="submit"]');
     await expect(page.locator('.meeting-history-list')).toContainText('Weekly Sync');
     await expect(page.locator('.meeting-history-list')).toContainText('Issue Review');
   });
@@ -380,7 +381,7 @@ test.describe('Chip Todo App', () => {
     expect(meetings).toHaveLength(0);
   });
 
-  test('should filter meetings by created date range', async ({ page }) => {
+  test('should filter meetings by created month', async ({ page }) => {
     await page.click('.tab[data-view="meeting"]');
     await page.fill('#meetingTitle', 'Early Meeting');
     await page.click('#saveMeetingBtn');
@@ -395,8 +396,8 @@ test.describe('Chip Todo App', () => {
       const meetings = JSON.parse(localStorage.getItem('chip_todo_meetings') || '[]');
       const earlyMeeting = meetings.find(meeting => meeting.title === 'Early Meeting');
       const lateMeeting = meetings.find(meeting => meeting.title === 'Late Meeting');
-      earlyMeeting.createdAt = '2026-03-01T09:00:00.000Z';
-      earlyMeeting.updatedAt = '2026-03-01T09:30:00.000Z';
+      earlyMeeting.createdAt = '2026-02-20T09:00:00.000Z';
+      earlyMeeting.updatedAt = '2026-02-20T09:30:00.000Z';
       lateMeeting.createdAt = '2026-03-10T09:00:00.000Z';
       lateMeeting.updatedAt = '2026-03-10T09:30:00.000Z';
       localStorage.setItem('chip_todo_meetings', JSON.stringify(meetings));
@@ -405,8 +406,7 @@ test.describe('Chip Todo App', () => {
     await page.reload();
     await page.waitForLoadState('networkidle');
     await page.click('.tab[data-view="meeting"]');
-    await page.fill('#meetingSearchStartDate', '2026-03-09');
-    await page.fill('#meetingSearchEndDate', '2026-03-10');
+    await page.fill('#meetingSearchMonth', '2026-03');
     await page.click('#meetingSearchForm button[type="submit"]');
 
     await expect(page.locator('.meeting-history-list')).toContainText('Late Meeting');

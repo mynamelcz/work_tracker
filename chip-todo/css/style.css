@@ -1133,76 +1133,91 @@ body {
   border-radius: 4px;
 }
 
-.meeting-task-progress-overview {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.meeting-task-progress-bar {
-  flex: 1;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 100%);
-}
-
-.meeting-task-progress-fill {
-  border-radius: 999px;
-}
-
-.meeting-task-progress-text {
-  min-width: 44px;
-  text-align: right;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .meeting-task-item .task-progress-slider {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
   padding: 8px 12px;
   background: var(--gray-50);
   border-radius: var(--radius);
   margin-bottom: 12px;
+  margin-bottom: 12px;
 }
 
-.meeting-task-item .task-progress-slider label {
+.meeting-task-item .task-progress-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meeting-task-item .task-progress-slider .progress-label {
   font-size: 13px;
   color: var(--gray-600);
-  white-space: nowrap;
 }
 
 .meeting-task-item .task-progress-slider .progress-value {
   font-weight: 600;
   color: var(--primary);
-  min-width: 30px;
+  min-width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .meeting-task-item .task-progress-slider input[type="range"] {
-  flex: 1;
-  height: 6px;
+  width: 100%;
+  height: 12px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--gray-200);
-  border-radius: 3px;
+  border-radius: 999px;
   outline: none;
+  cursor: pointer;
 }
 
 .meeting-task-item .task-progress-slider input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
-  background: var(--primary);
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  cursor: pointer;
-  transition: transform 0.2s;
+  background: white;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+  transition: transform 0.2s ease;
 }
 
 .meeting-task-item .task-progress-slider input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+  transform: scale(1.08);
+}
+
+.meeting-task-item .task-progress-slider input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+  cursor: pointer;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"].progress-none {
+  color: #EF4444;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"].progress-low {
+  color: #F97316;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"].progress-medium {
+  color: #3B82F6;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"].progress-high {
+  color: #14B8A6;
+}
+
+.meeting-task-item .task-progress-slider input[type="range"].progress-complete {
+  color: #10B981;
 }
 
 .history-list {
@@ -1868,7 +1883,19 @@ body {
   margin-bottom: 16px;
 }
 
-.meeting-search-form input[type="search"] {
+.meeting-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meeting-search-field span {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.meeting-search-form input[type="search"],
+.meeting-search-form input[type="month"] {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--gray-200);
@@ -1894,17 +1921,6 @@ body {
   margin-top: 8px;
   font-size: 12px;
   color: var(--gray-500);
-}
-
-.history-item-note {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--gray-600);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .meeting-meta {
@@ -2010,10 +2026,6 @@ body {
 }
 
 @media (max-width: 768px) {
-  .meeting-search-range {
-    grid-template-columns: 1fr;
-  }
-
   .meeting-form-grid {
     grid-template-columns: 1fr;
   }
@@ -2041,34 +2053,5 @@ body {
 
   .meeting-selector-modal {
     width: calc(100vw - 20px);
-  }
-}
-
-.meeting-search-range {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.meeting-search-date {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--gray-500);
-}
-
-.meeting-search-date input[type="date"] {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-md);
-  background: white;
-  color: var(--gray-700);
-}
-
-@media (max-width: 768px) {
-  .meeting-search-range {
-    grid-template-columns: 1fr;
   }
 }
